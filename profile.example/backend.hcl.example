@@ -1,0 +1,10 @@
+# Remote Terraform state. Copy to backend.hcl in your profile to enable it;
+# without that file deploy.sh keeps state in the profile directory instead.
+#
+# Create the bucket and lock table first:
+#   ./scripts/bootstrap-state.sh <bucket-name> us-east-1
+bucket         = "my-terraform-state-bucket"
+key            = "cabin-management/terraform.tfstate"
+region         = "us-east-1"
+dynamodb_table = "terraform-locks"
+encrypt        = true
