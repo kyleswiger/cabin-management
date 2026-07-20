@@ -1,0 +1,10 @@
+{
+  "appName": "The Cabin",
+  "longName": "The Cabin",
+  "tagline": "Shared property calendar, chores & projects",
+  "emoji": "🏕",
+  "propertyNoun": "cabin",
+  "priorityUserLabel": "the priority member",
+  "priorityUserLabelPossessive": "the priority member's",
+  "inviteIntro": "Welcome to the property site!"
+}

@@ -1,0 +1,22 @@
+node_modules/
+dist/
+*.zip
+.env
+.env.*
+!.env.example
+
+# Deployment profiles hold real domains, account-specific values, and state.
+# profile.example/ is the only one that ships.
+profile*/
+!profile.example/
+profile.example/terraform.tfstate*
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!profile.example/terraform.tfvars
+tfplan
+*.tfplan
+crash.log

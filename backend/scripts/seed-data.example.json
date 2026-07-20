@@ -1,0 +1,50 @@
+{
+  "projects": [
+    {
+      "title": "Roof inspection and moss removal",
+      "description": "Assess remaining roof life and clear moss buildup.",
+      "priority": "high",
+      "status": "not_started",
+      "estimatedCost": null
+    },
+    {
+      "title": "Repaint bedroom ceilings",
+      "description": "Scrape, patch, and repaint where paint is peeling.",
+      "priority": "high",
+      "status": "not_started",
+      "estimatedCost": null
+    },
+    {
+      "title": "Improve internet reliability",
+      "description": "Add a signal booster or external antenna.",
+      "priority": "medium",
+      "status": "not_started",
+      "estimatedCost": null
+    },
+    {
+      "title": "Install security cameras",
+      "description": "Cameras covering the entry points and outbuildings.",
+      "priority": "medium",
+      "status": "not_started",
+      "estimatedCost": null
+    },
+    {
+      "title": "Shared outdoor griddle",
+      "description": "Example of a shared purchase members chip in for.",
+      "priority": "low",
+      "status": "not_started",
+      "estimatedCost": 400
+    }
+  ],
+  "supplies": [
+    "Toilet paper",
+    "Paper towels",
+    "Cleaning supplies",
+    "Trash bags",
+    "Firewood",
+    "Coffee",
+    "Dish soap",
+    "Batteries",
+    "Propane"
+  ]
+}

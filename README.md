@@ -1,0 +1,157 @@
+# Cabin Management
+
+A private, invite-only web app for a shared property — a family cabin, a co-owned
+lake house, a hunting camp. It handles the coordination problems that otherwise live
+in a group text: who's using the place, what needs doing before and after a visit,
+what supplies ran out, and who has chipped in on repairs.
+
+Fully serverless on AWS. It scales to zero and costs a few dollars a month to run.
+
+See [PRD.md](PRD.md) for the full product spec and the reasoning behind the rules.
+
+## Features
+
+- **Reservation calendar** with a configurable "first look" priority window, so one
+  designated member can claim dates before they open to everyone.
+- **Occupancy-aware yardwork reminders** — SMS that fires when the property is about
+  to sit empty, or when someone is arriving to an overgrown yard.
+- **Supply checklist** that folds low/out items into the pre-visit text.
+- **Maintenance backlog** with a contribution ledger, so shared costs stay visible.
+- **Invite-only auth** with an admin role. No public signup.
+
+## Architecture
+
+- **Frontend:** React/Vite SPA on S3 + CloudFront (private bucket, Origin Access Control)
+- **API:** API Gateway (HTTP API) + one Node.js 22 Lambda, JWT-authorized by Cognito
+- **Auth:** Cognito User Pool, invite-only; `admin` group for admin rights
+- **Data:** Single DynamoDB table (on-demand), GSI1 for per-entity listing
+- **Reminders:** EventBridge Scheduler → daily Lambda → SNS SMS
+- **Email:** SES domain identity (DKIM + MAIL FROM + DMARC) when a custom domain is set
+
+```
+repo/
+├── backend/          TypeScript Lambdas (src/api, src/reminders) + operator scripts
+├── frontend/         Vite + React SPA
+├── infra/            Terraform — the whole stack, nothing shared
+├── profile.example/  A complete deployment profile you can copy
+└── deploy.sh         One-command build + deploy
+```
+
+## Configuration
+
+This repo contains no deployment-specific values. Everything that varies lives in a
+**profile directory** you pass to `deploy.sh`:
+
+| File | Purpose |
+| --- | --- |
+| `cabin.config.json` | Naming and message copy (required) |
+| `terraform.tfvars` | Project name, region, custom domain (required) |
+| `terraform.tfstate` | Terraform state — created on first apply, keep it private |
+| `public/` | Optional static files overlaid onto the built site (favicon, images) |
+
+`cabin.config.json` is read by both the frontend build and Terraform, so naming has a
+single source of truth:
+
+| Key | Drives |
+| --- | --- |
+| `appName` | Browser title, nav brand, login header, SMS message prefix |
+| `longName` | Cognito invite/reset email subjects and the SES From name |
+| `tagline` | Login page subtitle |
+| `emoji` | Favicon glyph and the brand mark |
+| `propertyNoun` | In-app copy — "Kim is at the **cabin**" |
+| `priorityUserLabel` | What the first-look member is called — "Mom", "Grandma", "the owner" |
+| `priorityUserLabelPossessive` | Possessive form of the same label |
+| `inviteIntro` | Opening line of the invite email |
+
+`terraform.tfvars` takes `project` (prefixes every AWS resource name, must be unique
+per deployment), `region`, `custom_domain`, `hosted_zone_id`, and `reminder_schedule`.
+
+Keeping your profile in a separate private repo — with this one as a submodule — lets
+you deploy your own instance without forking:
+
+```bash
+git submodule add https://github.com/<you>/cabin-management upstream
+./upstream/deploy.sh --profile "$PWD"
+```
+
+## Deploy
+
+Prereqs: Node 22+, Terraform ≥ 1.5, AWS credentials with admin-ish rights, us-east-1
+(ACM certs for CloudFront must live there).
+
+```bash
+(cd backend && npm install)
+(cd frontend && npm install)
+
+cp -r profile.example my-profile     # then edit both files in it
+./deploy.sh --profile my-profile     # add -auto-approve to skip the plan prompt
+```
+
+First-time setup after the initial apply:
+
+```bash
+export TABLE_NAME=$(cd infra && terraform output -state=../my-profile/terraform.tfstate -raw table_name)
+export USER_POOL_ID=$(cd infra && terraform output -state=../my-profile/terraform.tfstate -raw user_pool_id)
+
+# Seed the maintenance backlog + supply list (idempotent).
+# Pass your own JSON file to override backend/scripts/seed-data.example.json.
+node backend/scripts/seed.mjs
+
+# Create the first admin — Cognito emails them a temporary password.
+node backend/scripts/create-user.mjs you@example.com "Your Name" admin +15551234567
+```
+
+Everyone else is invited from the **Admin** page in the app.
+
+### Custom domain
+
+The site works out of the box on the CloudFront URL (`terraform output site_url`). For a
+custom domain, set `custom_domain` and `hosted_zone_id` (a Route 53 zone in the same
+account) in your profile's `terraform.tfvars` and redeploy. The ACM cert, DNS validation,
+alias record, and SES identity are all created for you.
+
+### Sandbox limits on a new AWS account
+
+Two one-time asks that AWS reviews manually:
+
+- **SES sandbox** — invite and password-reset emails only reach verified addresses until
+  you request production access.
+- **SNS SMS sandbox** — texts only reach verified numbers. Either verify each member's
+  number (`aws sns create-sms-sandbox-phone-number`) or exit the sandbox in the SNS
+  console. Until then sends fail gracefully and show up in Admin → notification log.
+
+## How the rules work
+
+- **First look:** dates more than `priorityWindowDays` (default 45) before arrival can only
+  be booked by the designated priority user. Inside the window it's first-come-first-served.
+  Both the person and the window are set on the Admin page.
+- **Yardwork reminders** (daily, `reminder_schedule`, default 15:00 UTC):
+  - Checkout day and the next visit is more than `vacancyThresholdDays` (default 14) away
+    → "mow before you go" text.
+  - Arrival day (or `preVisitReminderDays` before) and the last logged mow is older than the
+    threshold → "mow on arrival" text. Logging a mow resets the clock.
+  - Pre-visit texts also list every supply currently marked low or out.
+- **Overlap prevention:** same-day turnover is allowed — one stay may end the day another starts.
+
+## Dev
+
+```bash
+cd backend  && npm run typecheck
+cd frontend && npm run dev      # http://localhost:5173, allowed by API CORS
+```
+
+`npm run dev` uses `profile.example` unless you set `CABIN_CONFIG` to another
+`cabin.config.json`.
+
+## Upgrading an existing deployment
+
+The first-look settings were renamed (`momFirstLookDays` → `priorityWindowDays`,
+`momUserId` → `priorityUserId`). If your table predates that, run once:
+
+```bash
+TABLE_NAME=<table> node backend/scripts/migrate-priority-settings.mjs
+```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
