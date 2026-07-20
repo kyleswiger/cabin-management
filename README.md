@@ -46,7 +46,8 @@ This repo contains no deployment-specific values. Everything that varies lives i
 | --- | --- |
 | `cabin.config.json` | Naming and message copy (required) |
 | `terraform.tfvars` | Project name, region, custom domain (required) |
-| `terraform.tfstate` | Terraform state — created on first apply, keep it private |
+| `backend.hcl` | S3 remote state config (optional — local state if absent) |
+| `terraform.tfstate` | Local state; used only when `backend.hcl` is absent |
 | `public/` | Optional static files overlaid onto the built site (favicon, images) |
 
 `cabin.config.json` is read by both the frontend build and Terraform, so naming has a
@@ -90,6 +91,7 @@ cp -r profile.example my-profile     # then edit both files in it
 First-time setup after the initial apply:
 
 ```bash
+# With remote state, drop the -state flag; Terraform reads the configured backend.
 export TABLE_NAME=$(cd infra && terraform output -state=../my-profile/terraform.tfstate -raw table_name)
 export USER_POOL_ID=$(cd infra && terraform output -state=../my-profile/terraform.tfstate -raw user_pool_id)
 
@@ -102,6 +104,34 @@ node backend/scripts/create-user.mjs you@example.com "Your Name" admin +15551234
 ```
 
 Everyone else is invited from the **Admin** page in the app.
+
+### Remote state
+
+State defaults to a file in the profile directory, which is fine for a first look but
+means one machine holds the only copy. To move it to S3:
+
+```bash
+./scripts/bootstrap-state.sh my-tfstate-bucket us-east-1
+cp profile.example/backend.hcl.example my-profile/backend.hcl   # then edit it
+```
+
+The bucket is created versioned, encrypted, TLS-only, with public access blocked and
+old versions expiring after 90 days. `deploy.sh` picks up `backend.hcl` automatically
+and generates `infra/backend.tf` from it.
+
+Migrating a deployment that already has local state is a one-time step — `deploy.sh`
+refuses to run until you do it, rather than applying against empty remote state and
+orphaning your resources:
+
+```bash
+(cd infra && terraform init -migrate-state \
+   -backend-config=../my-profile/backend.hcl \
+   -state=../my-profile/terraform.tfstate)
+mv my-profile/terraform.tfstate my-profile/terraform.tfstate.pre-s3
+```
+
+Locking uses a DynamoDB table for compatibility with Terraform < 1.10. On 1.10+ you can
+drop `dynamodb_table` from `backend.hcl`, add `use_lockfile = true`, and delete the table.
 
 ### Custom domain
 
