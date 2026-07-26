@@ -5,7 +5,10 @@ interface NotificationLog {
   id: string;
   userId: string;
   type: string;
+  /** "accepted" (SNS took the message — not proof of delivery), "skipped_no_phone", or "failed: ...". */
   status: string;
+  /** SNS message ID, for cross-referencing delivery status logs. Null when nothing was published. */
+  messageId?: string | null;
   message: string;
   sentDate: string;
 }
