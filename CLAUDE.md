@@ -130,8 +130,12 @@ Frontend session handling is in `src/auth.ts` (amazon-cognito-identity-js, refre
   the gap to the next visit exceeds `vacancyThresholdDays`, and an arrival-day backstop when the
   last `mow` chore is older than that threshold. Editing/cancelling a reservation also triggers
   an ad-hoc vacancy SMS.
-- `sendSms()` never throws — it logs a `NOTIF` row with status `sent`/`skipped_no_phone`/`failed:…`
+- `sendSms()` never throws — it logs a `NOTIF` row with status `accepted`/`skipped_no_phone`/`failed:…`
   so SES/SNS sandbox failures surface in Admin → notification log instead of breaking the API.
+  `accepted` means SNS took the message, not that a carrier delivered it: in the SNS SMS sandbox,
+  publishes to unverified numbers are accepted and then silently dropped. Real delivery outcomes
+  live in SNS delivery status logs and the `AWS/SNS NumberOfNotificationsFailed` metric; the row's
+  `messageId` is what cross-references them.
 - Dates are `YYYY-MM-DD` strings compared lexicographically throughout; validate with
   `assertDate()` and avoid introducing `Date` arithmetic that could shift across time zones.
 
