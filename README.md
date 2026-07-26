@@ -208,9 +208,13 @@ npm run test:e2e            # headless; add `:ui` for the interactive runner
 ```
 
 The suite runs single-worker on purpose — it mutates shared live data, so parallel runs
-against one deployment could collide. It is safe to point at production: the only lasting
-footprint is one marked yardwork log per run (type `other`, which doesn't affect the mow
-reminder clock), because chore logs have no delete endpoint.
+against one deployment could collide. It is safe to point at production: advancing a project's
+status and adding a contribution would otherwise text every profile with a phone on file and
+write notification-log rows that nothing can delete, so `globalSetup` turns
+`notifyOnProjectUpdates` off for the duration of the run and `globalTeardown` restores it. That
+guard is why the test account needs `admin` — if the flag can't be set, the run aborts rather
+than proceed. The only lasting footprint is one marked yardwork log per run (type `other`, which
+doesn't affect the mow reminder clock), because chore logs have no delete endpoint.
 
 ## Upgrading an existing deployment
 

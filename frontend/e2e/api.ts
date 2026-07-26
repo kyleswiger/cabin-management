@@ -1,3 +1,4 @@
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { AuthenticationDetails, CognitoUser, CognitoUserPool } from "amazon-cognito-identity-js";
 import { env, MARKER } from "./env";
 
@@ -21,9 +22,17 @@ async function idToken(): Promise<string> {
   return cachedToken;
 }
 
-async function apiCall<T>(method: string, path: string): Promise<T> {
+async function apiCall<T>(method: string, path: string, body?: unknown): Promise<T> {
   const token = await idToken();
-  const res = await fetch(`${env.apiUrl}${path}`, { method, headers: { Authorization: `Bearer ${token}` } });
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+  const res = await fetch(`${env.apiUrl}${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
   if (!res.ok) throw new Error(`${method} ${path} -> ${res.status}`);
   return (await res.json().catch(() => ({}))) as T;
 }
@@ -32,8 +41,51 @@ interface Reservation { id: string; startDate: string; endDate: string; attendee
 interface Supply { id: string; name: string }
 interface Project { id: string; title: string }
 interface Chore { id: string; note: string }
-interface Settings { priorityWindowDays: number; priorityUserId: string | null }
+interface Settings { priorityWindowDays: number; priorityUserId: string | null; notifyOnProjectUpdates: boolean }
 interface Profile { id: string }
+
+// Written by globalSetup, read by globalTeardown. Same gitignored dir as the auth state.
+const SETTINGS_STATE_FILE = "e2e/.auth/settings-state.json";
+
+/**
+ * Advancing a project's status and adding a contribution both fan out a real SNS SMS to
+ * every profile with a phone on file, and write a permanent NOTIF# row per message that
+ * `sweepTestData` has no endpoint to delete. So the suite turns the flag off up front and
+ * `restoreSettings` puts it back in globalTeardown.
+ *
+ * This is a safety guard, not a nicety: if it can't be established, the run must not start.
+ */
+export async function disableProjectNotifications(): Promise<void> {
+  const settings = await apiCall<Settings>("GET", "/settings");
+
+  // A run killed before teardown leaves the file behind. Never overwrite it — the value
+  // recorded then is the real pre-test one, and the flag is already off now, so clobbering
+  // it with today's `false` would strand notifications disabled for good.
+  if (!existsSync(SETTINGS_STATE_FILE)) {
+    mkdirSync("e2e/.auth", { recursive: true });
+    writeFileSync(SETTINGS_STATE_FILE, JSON.stringify({ notifyOnProjectUpdates: settings.notifyOnProjectUpdates }));
+  }
+
+  if (settings.notifyOnProjectUpdates) {
+    await apiCall("PUT", "/settings", { notifyOnProjectUpdates: false });
+    console.log("\n[e2e setup] Disabled notifyOnProjectUpdates for the run.");
+  }
+}
+
+/** Restore notifyOnProjectUpdates to the value recorded by globalSetup. */
+export async function restoreSettings(): Promise<void> {
+  if (!existsSync(SETTINGS_STATE_FILE)) return;
+  const { notifyOnProjectUpdates } = JSON.parse(readFileSync(SETTINGS_STATE_FILE, "utf-8")) as Pick<
+    Settings,
+    "notifyOnProjectUpdates"
+  >;
+  // Keep the file until the restore lands, so a failed run doesn't lose the original value.
+  if (notifyOnProjectUpdates) {
+    await apiCall("PUT", "/settings", { notifyOnProjectUpdates: true });
+    console.log("[e2e teardown] Restored notifyOnProjectUpdates.");
+  }
+  rmSync(SETTINGS_STATE_FILE, { force: true });
+}
 
 function iso(d: Date): string {
   return d.toISOString().slice(0, 10);
