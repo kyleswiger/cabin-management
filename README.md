@@ -173,6 +173,45 @@ cd frontend && npm run dev      # http://localhost:5173, allowed by API CORS
 `npm run dev` uses `profile.example` unless you set `CABIN_CONFIG` to another
 `cabin.config.json`.
 
+## End-to-end tests
+
+A [Playwright](https://playwright.dev) suite in `frontend/e2e/` drives a real browser
+against a **deployed** instance, signing in through Cognito and exercising every page:
+reservations (create/edit/cancel), supplies, projects and the contribution ledger,
+yardwork, profile, and the admin screen. The tests create only clearly-marked data
+(`[e2e]` prefix) and delete it as they go; a global teardown sweeps anything a failed run
+leaves behind.
+
+**1. Provision a dedicated test account.** Unlike a normal invite, this sets a permanent
+password directly (no email, no first-login challenge) so the browser can sign in:
+
+```bash
+export USER_POOL_ID=$(cd infra && terraform output -raw user_pool_id)   # add -state=... for local state
+export TABLE_NAME=$(cd infra && terraform output -raw table_name)
+TEST_USER_EMAIL='playwright-e2e@your-domain.example.com' \
+TEST_USER_PASSWORD='a-strong-password-10+chars-with-a-number' \
+TEST_USER_NAME='Playwright E2E' \
+node backend/scripts/create-test-user.mjs admin      # 'admin' also covers the Admin page
+```
+
+**2. Configure credentials.** Copy `frontend/.env.example` to `frontend/.env` (gitignored)
+and fill in `E2E_BASE_URL`, `E2E_EMAIL`, and `E2E_PASSWORD`. The API URL, user pool, and
+client default to the `VITE_*` values already in that file.
+
+**3. Run it.**
+
+```bash
+cd frontend
+npm install                 # first time: pulls @playwright/test
+npx playwright install chromium
+npm run test:e2e            # headless; add `:ui` for the interactive runner
+```
+
+The suite runs single-worker on purpose — it mutates shared live data, so parallel runs
+against one deployment could collide. It is safe to point at production: the only lasting
+footprint is one marked yardwork log per run (type `other`, which doesn't affect the mow
+reminder clock), because chore logs have no delete endpoint.
+
 ## Upgrading an existing deployment
 
 The first-look settings were renamed (`momFirstLookDays` → `priorityWindowDays`,
