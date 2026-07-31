@@ -35,7 +35,7 @@ export async function sendSms(opts: {
     status = "skipped_no_consent";
   } else {
     try {
-      const res = await sns.send(new PublishCommand({ PhoneNumber: phone, Message: message }));
+      const res = await sns.send(new PublishCommand({ PhoneNumber: phone, Message: withOptOut(message) }));
       messageId = res.MessageId ?? null;
       status = "accepted";
     } catch (err) {
@@ -44,5 +44,21 @@ export async function sendSms(opts: {
     }
   }
 
-  await logNotification({ userId, channel: "sms", type, status, messageId, message });
+  await logNotification({ userId, channel: "sms", type, status, messageId, message: withOptOut(message) });
+}
+
+/**
+ * Append opt-out instructions to every outbound text.
+ *
+ * SNS honours STOP on its own — the reply lands on the account's opt-out list and we never see it —
+ * but honouring it is not the same as *disclosing* it. Carriers expect the instruction to appear in
+ * the message body, and the samples submitted with a toll-free registration are compared against
+ * real delivered traffic, so this has to be in the messages themselves rather than only in the
+ * registration paperwork.
+ *
+ * Applied here rather than at each call site so a new reminder type cannot forget it. The logged
+ * copy carries the footer too — the notification log should show what was actually sent.
+ */
+function withOptOut(message: string): string {
+  return message.includes("Reply STOP") ? message : `${message} Reply STOP to unsubscribe.`;
 }
