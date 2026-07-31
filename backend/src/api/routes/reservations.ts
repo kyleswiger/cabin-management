@@ -148,6 +148,7 @@ async function notifyVacancyChange(changed: Reservation): Promise<void> {
   await sendSms({
     userId: next.createdBy,
     phone: profile?.phone,
+    consent: profile?.smsConsent,
     type: "vacancy_change",
     message: `${APP_NAME}: a reservation change means the ${PROPERTY_NOUN} will now sit empty for ${
       gap === Infinity ? "a long stretch" : `${gap} days`

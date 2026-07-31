@@ -4,6 +4,10 @@ export interface Profile {
   email: string;
   phone?: string | null;
   role: "admin" | "member";
+  /** Explicit SMS opt-in. No text is sent without it — see backend/src/lib/sms.ts. */
+  smsConsent?: boolean;
+  smsConsentAt?: string | null;
+  emailOptIn?: boolean;
 }
 
 export interface Reservation {

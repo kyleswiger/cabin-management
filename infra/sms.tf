@@ -4,7 +4,7 @@
 # origination number in the account or SNS has nothing to send them from.
 # Requesting the number is only half of it: toll-free numbers must also clear
 # TFN registration before carriers will deliver, and that's a console/API
-# workflow with a human review step — see README. Numbers bill monthly whether
+# workflow with a human review step — see docs/sms-program.md. Numbers bill monthly whether
 # or not they've been registered, so this is opt-in per deployment.
 resource "aws_pinpointsmsvoicev2_phone_number" "sms" {
   count = var.provision_sms_number ? 1 : 0

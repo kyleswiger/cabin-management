@@ -24,12 +24,37 @@ function validatePhone(value: unknown): string | null {
   return value;
 }
 
-export async function updateMe(caller: Caller, body: { name?: unknown; phone?: unknown }): Promise<Profile> {
+export async function updateMe(
+  caller: Caller,
+  body: { name?: unknown; phone?: unknown; smsConsent?: unknown; emailOptIn?: unknown }
+): Promise<Profile> {
   const profile = await ensureProfile(caller);
+  const phone = body.phone !== undefined ? validatePhone(body.phone) : profile.phone;
+
+  // Consent is bound to the number that gave it. Changing or clearing the phone revokes it —
+  // otherwise a member could consent on one number, swap in another, and we would be texting a
+  // number that never agreed to anything.
+  const phoneChanged = phone !== profile.phone;
+  let smsConsent = phoneChanged ? false : (profile.smsConsent ?? false);
+  let smsConsentAt = phoneChanged ? null : (profile.smsConsentAt ?? null);
+
+  if (body.smsConsent !== undefined) {
+    if (typeof body.smsConsent !== "boolean") throw new ApiError(400, "smsConsent must be a boolean");
+    if (body.smsConsent && !phone) throw new ApiError(400, "Add a mobile number before turning on text reminders");
+    // Only stamp a new timestamp on the transition into consent, so the audit trail records when
+    // the member actually agreed rather than the last time they saved the form.
+    if (body.smsConsent && !smsConsent) smsConsentAt = new Date().toISOString();
+    if (!body.smsConsent) smsConsentAt = null;
+    smsConsent = body.smsConsent;
+  }
+
   const updated: Profile = {
     ...profile,
     name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : profile.name,
-    phone: body.phone !== undefined ? validatePhone(body.phone) : profile.phone,
+    phone,
+    smsConsent,
+    smsConsentAt,
+    emailOptIn: typeof body.emailOptIn === "boolean" ? body.emailOptIn : (profile.emailOptIn ?? true),
   };
   await putProfile(updated);
   return updated;
@@ -65,7 +90,18 @@ export async function inviteUser(
     await cognito.send(new AdminAddUserToGroupCommand({ UserPoolId: USER_POOL_ID, Username: email, GroupName: "admin" }));
   }
 
-  const profile: Profile = { id: sub, name: body.name.trim(), email, phone, role };
+  // An admin can record a member's number but cannot consent on their behalf — the member has to
+  // check the box themselves on the profile page before any SMS goes out.
+  const profile: Profile = {
+    id: sub,
+    name: body.name.trim(),
+    email,
+    phone,
+    role,
+    smsConsent: false,
+    smsConsentAt: null,
+    emailOptIn: true,
+  };
   await putProfile(profile);
   return profile;
 }
@@ -83,10 +119,17 @@ export async function updateUser(
     const cmd = newRole === "admin" ? AdminAddUserToGroupCommand : AdminRemoveUserFromGroupCommand;
     await cognito.send(new cmd({ UserPoolId: USER_POOL_ID, Username: profile.email, GroupName: "admin" }));
   }
+  const phone = body.phone !== undefined ? validatePhone(body.phone) : profile.phone;
+  // Same rule as updateMe, and there is deliberately no path here for an admin to *grant*
+  // consent — only the member can do that, and editing their number revokes what they gave.
+  const phoneChanged = phone !== profile.phone;
+
   const updated: Profile = {
     ...profile,
     name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : profile.name,
-    phone: body.phone !== undefined ? validatePhone(body.phone) : profile.phone,
+    phone,
+    smsConsent: phoneChanged ? false : (profile.smsConsent ?? false),
+    smsConsentAt: phoneChanged ? null : (profile.smsConsentAt ?? null),
     role: newRole,
   };
   await putProfile(updated);
