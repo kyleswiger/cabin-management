@@ -145,6 +145,6 @@ async function notifyProjectUpdate(actor: Caller, message: string): Promise<void
   await Promise.all(
     profiles
       .filter((p) => p.id !== actor.sub && p.phone)
-      .map((p) => sendSms({ userId: p.id, phone: p.phone, type: "project_update", message }))
+      .map((p) => sendSms({ userId: p.id, phone: p.phone, consent: p.smsConsent, type: "project_update", message }))
   );
 }

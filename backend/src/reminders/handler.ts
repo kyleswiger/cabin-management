@@ -1,11 +1,22 @@
 import { getSettings, queryType } from "../lib/db.js";
 import { daysBetween, todayISO } from "../lib/http.js";
 import { sendSms } from "../lib/sms.js";
+import { sendEmail } from "../lib/email.js";
 import type { Reservation } from "../api/routes/reservations.js";
 import type { SupplyItem } from "../api/routes/supplies.js";
 import type { ChoreLog } from "../api/routes/chores.js";
 import type { Profile } from "../lib/users.js";
 import { APP_NAME } from "../lib/branding.js";
+
+/**
+ * Subject lines per reminder type. SMS carries the whole message in one line; email needs a
+ * subject, and a generic one ("You have a notification") is what makes people stop opening them.
+ */
+const EMAIL_SUBJECTS: Record<string, string> = {
+  pre_visit: `${APP_NAME}: your visit is coming up`,
+  checkout_mow: `${APP_NAME}: before you head out`,
+  arrival_mow: `${APP_NAME}: the yard needs attention`,
+};
 
 /**
  * Daily reminder evaluation (PRD 5.3 / 5.6). Runs on an EventBridge schedule so
@@ -31,8 +42,25 @@ export async function handler(): Promise<{ sent: number }> {
   const daysSinceMowAt = (date: string) => (lastMow ? daysBetween(lastMow, date) : Infinity);
 
   let sent = 0;
+  /**
+   * Fan one reminder out to both channels. They are independent on purpose: neither throws, and a
+   * member with SMS consent and email opt-in gets both, while a member with neither still gets a
+   * NOTIF row per channel explaining why nothing went out. `sent` counts reminders evaluated, not
+   * messages delivered — the notification log is the record of what actually happened.
+   */
   const notify = async (userId: string, type: string, message: string) => {
-    await sendSms({ userId, phone: profileById.get(userId)?.phone, type, message });
+    const profile = profileById.get(userId);
+    await Promise.all([
+      sendSms({ userId, phone: profile?.phone, consent: profile?.smsConsent, type, message }),
+      sendEmail({
+        userId,
+        email: profile?.email,
+        optedIn: profile?.emailOptIn ?? true,
+        type,
+        subject: EMAIL_SUBJECTS[type] ?? `${APP_NAME} reminder`,
+        message,
+      }),
+    ]);
     sent++;
   };
 

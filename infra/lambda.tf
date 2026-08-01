@@ -62,6 +62,18 @@ data "aws_iam_policy_document" "lambda_permissions" {
     }
   }
 
+  # Notification email. Scoped to the deployment's own verified identity rather than "*" so this
+  # role cannot send as any other identity in the account. Only present when the deployment has a
+  # custom domain — without one there is no verified identity and sendEmail() skips.
+  dynamic "statement" {
+    for_each = local.use_custom_domain ? [1] : []
+    content {
+      sid       = "NotificationEmail"
+      actions   = ["ses:SendEmail"]
+      resources = [aws_sesv2_email_identity.domain[0].arn]
+    }
+  }
+
   statement {
     sid = "CognitoAdmin"
     actions = [
@@ -95,6 +107,10 @@ resource "aws_lambda_function" "api" {
     variables = merge(local.lambda_branding_env, {
       TABLE_NAME   = aws_dynamodb_table.main.name
       USER_POOL_ID = aws_cognito_user_pool.main.id
+      SITE_URL     = local.site_url
+      # Empty without a custom domain — sendEmail() treats that as "no verified sender" and
+      # skips rather than erroring per recipient.
+      NOTIFICATION_FROM_ADDRESS = local.use_custom_domain ? "no-reply@${var.custom_domain}" : ""
     })
   }
 }
@@ -113,6 +129,10 @@ resource "aws_lambda_function" "reminders" {
     variables = merge(local.lambda_branding_env, {
       TABLE_NAME   = aws_dynamodb_table.main.name
       USER_POOL_ID = aws_cognito_user_pool.main.id
+      SITE_URL     = local.site_url
+      # Empty without a custom domain — sendEmail() treats that as "no verified sender" and
+      # skips rather than erroring per recipient.
+      NOTIFICATION_FROM_ADDRESS = local.use_custom_domain ? "no-reply@${var.custom_domain}" : ""
     })
   }
 }

@@ -142,6 +142,32 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: () => Promise<vo
           </form>
         )}
       </div>
+
+      {/*
+        Public, unauthenticated copy. Everything above this point is a login wall, which is all an
+        outside visitor — including a carrier reviewing the toll-free SMS registration — could
+        otherwise see. A registration whose website shows only a password box is routinely
+        rejected, so this block states plainly what the service is and links the SMS program terms.
+      */}
+      <div className="login-about">
+        <h2>What is this?</h2>
+        <p>
+          {branding.longName} is a private, invite-only site that one family uses to coordinate a
+          shared {branding.propertyNoun} — booking visits, tracking supplies, and keeping up with
+          maintenance. There is no public signup: accounts are created by a family administrator.
+        </p>
+        <h2>Text message reminders</h2>
+        <p>
+          Members who choose to can get reminders by text — an upcoming visit, supplies to bring, or
+          yardwork that needs doing. Texts go only to members who entered their own number and
+          checked the consent box on their profile page. Message frequency varies, up to about one
+          message per day. Message and data rates may apply. Reply HELP for help, STOP to
+          unsubscribe. We never share numbers with anyone.
+        </p>
+        <p>
+          <a href="/sms-terms.html">SMS terms &amp; privacy policy</a>
+        </p>
+      </div>
     </div>
   );
 }

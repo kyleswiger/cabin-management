@@ -65,7 +65,9 @@ single source of truth:
 | `inviteIntro` | Opening line of the invite email |
 
 `terraform.tfvars` takes `project` (prefixes every AWS resource name, must be unique
-per deployment), `region`, `custom_domain`, `hosted_zone_id`, and `reminder_schedule`.
+per deployment), `region`, `custom_domain`, `hosted_zone_id`, `reminder_schedule`, and
+optionally `provision_sms_number` / `sms_number_type` — see [docs/sms-program.md](docs/sms-program.md)
+for what an origination number costs and why US texts don't deliver without one.
 
 Keeping your profile in a separate private repo — with this one as a submodule — lets
 you deploy your own instance without forking:

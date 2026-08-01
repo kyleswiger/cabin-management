@@ -7,6 +7,19 @@ export interface Profile {
   email: string;
   phone?: string | null;
   role: "admin" | "member";
+  /**
+   * Explicit opt-in to carrier-regulated SMS, captured by an unchecked-by-default box on the
+   * profile page. `sendSms()` refuses to send without it. `smsConsentAt` is the audit trail —
+   * carriers can ask when a given number consented, and "we don't record that" is not an answer.
+   * Absent on profiles created before consent capture existed, which reads as no consent.
+   */
+  smsConsent?: boolean;
+  smsConsentAt?: string | null;
+  /**
+   * Opt-out for notification email. Defaults to on: members are invited by an admin at an address
+   * they gave, so transactional mail is expected. Unlike SMS this is not carrier-gated.
+   */
+  emailOptIn?: boolean;
 }
 
 export async function getProfile(sub: string): Promise<Profile | null> {
@@ -43,6 +56,9 @@ export async function ensureProfile(caller: Caller): Promise<Profile> {
     email: caller.email,
     phone: null,
     role: caller.isAdmin ? "admin" : "member",
+    smsConsent: false,
+    smsConsentAt: null,
+    emailOptIn: true,
   };
   await putProfile(profile);
   return profile;
