@@ -66,7 +66,12 @@ fi
 echo "==> State: $STATE_MODE"
 
 echo "==> Building backend Lambda bundles"
-(cd backend && npm run build)
+# `npm ci` before every build, not just on a fresh checkout. A profile repo pins this repo as a
+# submodule, so bumping the pin swaps in a new package.json while leaving the old node_modules in
+# place — esbuild then fails to resolve any newly added dependency. That is a confusing failure
+# that looks like broken source rather than stale deps, and it also hits a first-ever clone.
+# `ci` (not `install`) so the lockfile is authoritative and the tree is reproducible.
+(cd backend && npm ci --silent && npm run build)
 
 echo "==> Applying Terraform"
 (cd infra \
@@ -92,7 +97,7 @@ VITE_API_URL=$API_URL
 VITE_USER_POOL_ID=$USER_POOL_ID
 VITE_CLIENT_ID=$CLIENT_ID
 EOF
-(cd frontend && CABIN_CONFIG="$CONFIG" npm run build)
+(cd frontend && npm ci --silent && CABIN_CONFIG="$CONFIG" npm run build)
 
 # Profile-supplied favicons, images, etc. win over the repo defaults.
 if [ -d "$PROFILE/public" ]; then
