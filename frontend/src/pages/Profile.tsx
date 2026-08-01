@@ -66,7 +66,7 @@ export default function ProfilePage() {
           </div>
 
           <div className="field">
-            <label>
+            <label className="check">
               <input
                 type="checkbox"
                 checked={emailOptIn}
@@ -89,7 +89,7 @@ export default function ProfilePage() {
             docs/sms-program.md.
           */}
           <div className="field">
-            <label>
+            <label className="check">
               <input
                 type="checkbox"
                 checked={effectiveConsent}
