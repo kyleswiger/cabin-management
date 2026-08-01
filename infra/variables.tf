@@ -34,6 +34,23 @@ variable "reminder_schedule" {
   default     = "cron(0 15 * * ? *)"
 }
 
+variable "provision_sms_number" {
+  description = "Buy a dedicated origination number for reminder SMS. US SMS won't deliver without one, but the number bills monthly and toll-free requires TFN registration before carriers accept traffic."
+  type        = bool
+  default     = false
+}
+
+variable "sms_number_type" {
+  description = "Origination number type when provision_sms_number is set. TOLL_FREE registers fastest; TEN_DLC needs a brand and campaign first."
+  type        = string
+  default     = "TOLL_FREE"
+
+  validation {
+    condition     = contains(["TOLL_FREE", "TEN_DLC"], var.sms_number_type)
+    error_message = "sms_number_type must be TOLL_FREE or TEN_DLC."
+  }
+}
+
 locals {
   use_custom_domain = var.custom_domain != ""
 
