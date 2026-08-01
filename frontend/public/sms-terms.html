@@ -1,0 +1,93 @@
+<!doctype html>
+<!--
+  Public, unauthenticated SMS program disclosure.
+
+  This page exists to satisfy US carrier requirements for toll-free SMS registration: the opt-in
+  mechanism, message frequency, rate disclosure, HELP/STOP handling, and a privacy statement all
+  have to be publicly readable without logging in. It is deliberately plain static HTML in
+  frontend/public/ rather than a React route, so it renders even if the SPA bundle fails and it
+  stays reachable at a stable URL a reviewer can be linked to directly.
+
+  Wording is generic (no property name, domain, or contact address) to keep this repo free of
+  deployment-specific values. A deployment that wants branded copy can override this file from its
+  profile's public/ overlay — see "The profile directory" in CLAUDE.md.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SMS Terms &amp; Privacy</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        line-height: 1.6;
+        max-width: 42rem;
+        margin: 0 auto;
+        padding: 2rem 1.25rem 4rem;
+      }
+      h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+      h2 { font-size: 1.1rem; margin-top: 2rem; }
+      .sub { opacity: 0.7; margin-top: 0; }
+      footer { margin-top: 3rem; font-size: 0.9rem; opacity: 0.7; }
+    </style>
+  </head>
+  <body>
+    <h1>SMS Terms &amp; Privacy</h1>
+    <p class="sub">Text message reminders for members of this private property-management site.</p>
+
+    <h2>What this service is</h2>
+    <p>
+      This is a private, invite-only site used by one family to coordinate a shared property:
+      booking visits, tracking household supplies, and keeping up with maintenance and yardwork.
+      Accounts are created by an administrator. There is no public signup, and the site sells
+      nothing.
+    </p>
+
+    <h2>What messages we send</h2>
+    <p>
+      Operational reminders only, tied to your own use of the site: an upcoming reservation,
+      supplies that are low or out before a visit, and yardwork that is due. We never send
+      marketing, promotional, or third-party messages.
+    </p>
+
+    <h2>How you opt in</h2>
+    <p>
+      Signing in and going to your profile page, entering your own mobile number, and checking the
+      consent box — which is unchecked by default. No message is ever sent to a number that has not
+      been through that step. We record the date and time you consented. Changing your phone number
+      clears your consent, and you must opt in again for the new number.
+    </p>
+
+    <h2>Message frequency and cost</h2>
+    <p>
+      Message frequency varies with your reservations and the state of the property, up to about one
+      message per day. <strong>Message and data rates may apply</strong> — your mobile carrier, not
+      this site, may charge you for receiving text messages.
+    </p>
+
+    <h2>HELP and STOP</h2>
+    <p>
+      Reply <strong>HELP</strong> to any message for help. Reply <strong>STOP</strong> to
+      unsubscribe; you will receive one confirmation and no further messages. You can also turn
+      texts off at any time by unchecking the consent box on your profile page, which stops them
+      immediately.
+    </p>
+
+    <h2>Privacy</h2>
+    <p>
+      Your phone number is used for one purpose: sending you the reminders described above. We do
+      not sell, rent, or share phone numbers with anyone, and we do not share them with third
+      parties for marketing. Numbers are stored with the rest of your profile and are visible only
+      to you and the site's administrators. Removing your number from your profile removes it from
+      the site.
+    </p>
+
+    <h2>Contact</h2>
+    <p>
+      Reply HELP to any message, or contact the family administrator who invited you to the site.
+    </p>
+
+    <footer><a href="/">← Back to sign in</a></footer>
+  </body>
+</html>

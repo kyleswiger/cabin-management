@@ -155,7 +155,12 @@ table.list td { padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--line); }
 .progress { background: #e7e2d5; border-radius: 999px; height: 8px; overflow: hidden; margin: 0.4rem 0; }
 .progress > div { background: var(--moss); height: 100%; }
 
-.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(180deg, var(--pine-dark), var(--pine)); padding: 1rem; }
+/* Column so the public "what is this" block stacks under the sign-in card instead of beside it. */
+.login-wrap { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.25rem; background: linear-gradient(180deg, var(--pine-dark), var(--pine)); padding: 2rem 1rem; }
+.login-about { background: var(--cream); border-radius: 14px; padding: 1.5rem 2rem; width: 100%; max-width: 400px; box-shadow: 0 12px 40px #00000055; font-size: 0.88rem; color: var(--muted); }
+.login-about h2 { font-size: 1rem; margin: 1.1rem 0 0.4rem; color: var(--pine-dark); }
+.login-about h2:first-child { margin-top: 0; }
+.login-about a { color: var(--pine); }
 .login-card { background: var(--cream); border-radius: 14px; padding: 2rem; width: 100%; max-width: 400px; box-shadow: 0 12px 40px #00000055; }
 .login-card h1 { margin: 0 0 0.25rem; font-size: 1.4rem; color: var(--pine-dark); }
 .login-card .sub { color: var(--muted); margin-bottom: 1.25rem; font-size: 0.9rem; }
