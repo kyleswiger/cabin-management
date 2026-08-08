@@ -11,6 +11,12 @@ profile*/
 !profile.example/
 profile.example/terraform.tfstate*
 
+# CloudFront signed-cookie signing keys (scripts/media-cf-keys.sh) land in the
+# profile dir, and profile.example/ is un-ignored above — without these lines a
+# `git add -A` would commit the private key that mints /media/* cookies.
+*.pem
+*.bak
+
 # Terraform
 **/.terraform/
 *.tfstate

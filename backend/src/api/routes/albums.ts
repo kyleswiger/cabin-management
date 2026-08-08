@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { ddb, GetCommand, PutCommand, DeleteCommand, QueryCommand, TABLE, queryType } from "../../lib/db.js";
 import { ApiError, type Caller } from "../../lib/http.js";
 import { deleteMediaObjects } from "../../lib/media.js";
+import type { MediaItem } from "../../types/media.js";
 
 /** Album — PRD 5.8. Two kinds sharing one media pipeline: trip albums (anyone
  * creates) and reference albums (admin-only creation, carry a well-known slug
@@ -18,30 +19,12 @@ export interface Album {
 
 /** MediaItem — PRD 5.8/7. The row is created at upload-request time with
  * processingStatus "uploading"; the media-processing Lambda (S3 event) flips it
- * to "processing"/"ready"/"failed" and fills webKey/thumbKey/posterKey. The
- * frontend builds `/media/<key>` URLs from the *Key fields (signed cookies). */
-export interface MediaItem {
-  id: string;
-  albumId: string;
-  mediaType: "photo" | "video";
-  originalKey: string;
-  originalFormat: string;
-  webKey?: string;
-  thumbKey?: string;
-  posterKey?: string;
-  processingStatus: "uploading" | "processing" | "ready" | "failed";
-  error?: string;
-  caption?: string;
-  uploadedBy: string;
-  uploadedByName: string;
-  takenDate?: string;
-  createdAt: string;
-  /** Print queue — PRD 5.9. Photos only. */
-  printStatus: "none" | "requested" | "printed";
-  printRequestedBy?: string;
-  printRequestedByName?: string;
-  printedDate?: string;
-}
+ * to "processing"/"ready"/"failed" and fills webKey/thumbKey/posterKey.
+ *
+ * Defined once in src/types/media.ts and re-exported here: the API routes and
+ * the processing Lambda write the same rows, so a second structurally-independent
+ * copy would let the two drift without tsc noticing. */
+export type { MediaItem } from "../../types/media.js";
 
 export async function getAlbum(id: string): Promise<Album> {
   const res = await ddb.send(new GetCommand({ TableName: TABLE, Key: { PK: `ALBUM#${id}`, SK: "META" } }));
@@ -83,10 +66,12 @@ export async function listAlbums(): Promise<Array<Album & { itemCount: number; c
   const [albums, media] = await Promise.all([queryType<Album>("ALBUM"), queryType<MediaItem>("MEDIA")]);
   return albums.map((a) => {
     const items = media.filter((m) => m.albumId === a.id);
+    // Videos never get a thumbKey — fall back to the poster frame, or a
+    // video-only album would show no cover at all.
     const cover = items
-      .filter((m) => m.processingStatus === "ready" && m.thumbKey)
+      .filter((m) => m.processingStatus === "ready" && (m.thumbKey || m.posterKey))
       .sort((x, y) => y.createdAt.localeCompare(x.createdAt))[0];
-    return { ...a, itemCount: items.length, coverThumbKey: cover?.thumbKey ?? null };
+    return { ...a, itemCount: items.length, coverThumbKey: cover?.thumbKey ?? cover?.posterKey ?? null };
   });
 }
 
@@ -151,7 +136,13 @@ export async function deleteAlbum(caller: Caller, id: string): Promise<void> {
   if (!caller.isAdmin) throw new ApiError(403, "Only an admin can delete an album");
   await getAlbum(id); // 404 before any destructive work
   const items = await listAlbumMedia(id);
-  await deleteMediaObjects(items.flatMap((m) => [m.originalKey, m.webKey, m.thumbKey, m.posterKey]));
+  // Album-wide prefix delete: also catches derivatives written for items that
+  // were still mid-processing when the album was deleted.
+  await deleteMediaObjects(
+    id,
+    undefined,
+    items.flatMap((m) => [m.originalKey, m.webKey, m.thumbKey, m.posterKey])
+  );
   for (const m of items) {
     await ddb.send(new DeleteCommand({ TableName: TABLE, Key: { PK: `ALBUM#${id}`, SK: `MEDIA#${m.id}` } }));
   }

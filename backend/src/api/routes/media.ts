@@ -125,7 +125,7 @@ export async function deleteMediaItem(caller: Caller, albumId: string, id: strin
   if (item.uploadedBy !== caller.sub && !caller.isAdmin) {
     throw new ApiError(403, "Only the uploader or an admin can delete this item");
   }
-  await deleteMediaObjects([item.originalKey, item.webKey, item.thumbKey, item.posterKey]);
+  await deleteMediaObjects(albumId, id, [item.originalKey, item.webKey, item.thumbKey, item.posterKey]);
   await ddb.send(new DeleteCommand({ TableName: TABLE, Key: { PK: `ALBUM#${albumId}`, SK: `MEDIA#${id}` } }));
 }
 
@@ -210,16 +210,24 @@ const CF_PRIVATE_KEY_PARAM = process.env.MEDIA_CF_PRIVATE_KEY_PARAM || "";
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
 
 /** The RSA signing key lives in SSM (SecureString); cache it across warm
- * invocations so a session issue is one SSM read per cold start, not per call. */
-let cachedPrivateKey: string | undefined;
+ * invocations so a session issue is one SSM read per cold start, not per call.
+ *
+ * The cache expires so key rotation converges on its own: without a TTL a warm
+ * container would keep signing with the retired key while CloudFront trusts only
+ * the new one, handing out cookies that 403 for the life of that container
+ * (scripts/media-cf-keys.sh documents the rotation sequence). */
+const PRIVATE_KEY_TTL_MS = 5 * 60_000;
+let cachedPrivateKey: { key: string; fetchedAtMs: number } | undefined;
 
 async function getPrivateKey(): Promise<string> {
-  if (cachedPrivateKey) return cachedPrivateKey;
+  if (cachedPrivateKey && Date.now() - cachedPrivateKey.fetchedAtMs < PRIVATE_KEY_TTL_MS) {
+    return cachedPrivateKey.key;
+  }
   const ssm = new SSMClient({});
   const res = await ssm.send(new GetParameterCommand({ Name: CF_PRIVATE_KEY_PARAM, WithDecryption: true }));
   const key = res.Parameter?.Value;
   if (!key) throw new ApiError(500, "Media signing key is not configured");
-  cachedPrivateKey = key;
+  cachedPrivateKey = { key, fetchedAtMs: Date.now() };
   return key;
 }
 
@@ -235,7 +243,13 @@ export async function createMediaSession(): Promise<{ cookies: Record<string, st
   const policy = JSON.stringify({
     Statement: [
       {
-        Resource: `${SITE_URL}/media/*`,
+        // Deliberately the whole distribution, not `/media/*`: a viewer-request
+        // CloudFront Function rewrites /media/<key> → /<key> (infra/media.tf), and
+        // AWS does not document whether signature validation sees the URI before
+        // or after that rewrite. A `/media/*` resource would 403 every request if
+        // it validates after. Nothing is over-granted — /media/* is the only
+        // behavior with a trusted key group, so it is the only path a cookie gates.
+        Resource: `${SITE_URL}/*`,
         Condition: { DateLessThan: { "AWS:EpochTime": expiresEpoch } },
       },
     ],

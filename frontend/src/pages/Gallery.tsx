@@ -9,8 +9,9 @@ import {
   mediaApi,
   mediaUrl,
   uploadToS3,
-  type Album,
+  useMediaSessionState,
   type AlbumDetail,
+  type AlbumSummary,
   type AlbumType,
   type MediaItem,
 } from "../media";
@@ -28,9 +29,19 @@ export default function GalleryPage() {
 
 const EMPTY_ALBUM_FORM = { type: "trip" as AlbumType, title: "", slug: "" };
 
+/** Reference albums are addressed by slug (PRD 5.8 deep links) and the API
+ * requires kebab-case, so derive one from the title rather than making the
+ * admin guess the format. */
+function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function AlbumListView() {
   const { isAdmin } = useAuth();
-  const [albums, setAlbums] = useState<Album[] | null>(null);
+  const [albums, setAlbums] = useState<AlbumSummary[] | null>(null);
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(EMPTY_ALBUM_FORM);
@@ -51,7 +62,11 @@ function AlbumListView() {
       await mediaApi.createAlbum({
         type: form.type,
         title: form.title.trim(),
-        ...(form.type === "reference" && form.slug.trim() ? { slug: form.slug.trim() } : {}),
+        // The API requires a kebab-case slug on reference albums and rejects one
+        // on trip albums, so fall back to the title-derived slug when blank.
+        ...(form.type === "reference"
+          ? { slug: slugify(form.slug.trim() || form.title) }
+          : {}),
       });
       setForm(EMPTY_ALBUM_FORM);
       setShowCreate(false);
@@ -101,8 +116,13 @@ function AlbumListView() {
               </div>
               {form.type === "reference" && (
                 <div className="field">
-                  <label>Slug (optional, e.g. fridge)</label>
-                  <input value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} />
+                  <label>Slug</label>
+                  <input
+                    value={form.slug}
+                    placeholder={slugify(form.title) || "e.g. fridge"}
+                    onChange={(e) => setForm({ ...form, slug: e.target.value })}
+                  />
+                  <small className="muted">Used in links; defaults to the title.</small>
                 </div>
               )}
             </div>
@@ -148,7 +168,7 @@ function AlbumListView() {
   );
 }
 
-function AlbumCard({ album, currentState = false }: { album: Album; currentState?: boolean }) {
+function AlbumCard({ album, currentState = false }: { album: AlbumSummary; currentState?: boolean }) {
   return (
     <Link to={`/gallery/${album.id}`} className="album-card">
       <div className="album-cover">
@@ -176,6 +196,11 @@ interface UploadRow {
   error?: string;
 }
 
+const POLL_INTERVAL_MS = 10_000;
+/** Long enough for a big video transcode, short enough that a dead upload row
+ * doesn't poll forever. */
+const POLL_MAX_MS = 30 * 60_000;
+
 function AlbumDetailView({ albumId }: { albumId: string }) {
   const navigate = useNavigate();
   const [data, setData] = useState<AlbumDetail | null>(null);
@@ -193,16 +218,31 @@ function AlbumDetailView({ albumId }: { albumId: string }) {
     void load();
   }, [load]);
 
-  // PRD 5.8: items show as "processing" until derivatives land — poll while any are pending.
+  // PRD 5.8: items show as "processing" until derivatives land — poll while any are
+  // pending. A ready video's poster comes from a separate MediaConvert output that
+  // can land after the item flips to ready, so keep polling for that too.
   const items = data?.items ?? [];
-  const hasPending = items.some(
-    (i) => i.processingStatus === "uploading" || i.processingStatus === "processing",
+  const shouldPoll = items.some(
+    (i) =>
+      i.processingStatus === "uploading" ||
+      i.processingStatus === "processing" ||
+      (i.mediaType === "video" && i.processingStatus === "ready" && !i.posterKey),
   );
   useEffect(() => {
-    if (!hasPending) return;
-    const timer = window.setInterval(() => void load(), 10_000);
+    if (!shouldPoll) return;
+    // Bounded: an upload whose S3 PUT never completed stays "uploading" forever,
+    // and an unbounded interval would poll the API for the life of the tab.
+    let elapsedMs = 0;
+    const timer = window.setInterval(() => {
+      elapsedMs += POLL_INTERVAL_MS;
+      if (elapsedMs > POLL_MAX_MS) {
+        window.clearInterval(timer);
+        return;
+      }
+      void load();
+    }, POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [hasPending, load]);
+  }, [shouldPoll, load]);
 
   const patchUpload = (id: string, patch: Partial<UploadRow>) =>
     setUploads((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -295,6 +335,9 @@ function AlbumDetailView({ albumId }: { albumId: string }) {
       )}
 
       <div className="media-grid">
+        {/* Every tile opens the lightbox, including not-ready ones: a failed
+            conversion or an upload whose PUT never finished would otherwise have
+            no reachable delete (PRD 5.8 uploader-or-admin delete). */}
         {items.map((item) =>
           item.processingStatus === "ready" ? (
             <button className="media-tile" key={item.id} onClick={() => setSelectedId(item.id)}>
@@ -308,15 +351,20 @@ function AlbumDetailView({ albumId }: { albumId: string }) {
               {item.id === newestReadyId && <span className="chip in_progress overlay">current state</span>}
             </button>
           ) : item.processingStatus === "failed" ? (
-            <div className="media-tile placeholder" key={item.id} title={item.error}>
+            <button
+              className="media-tile placeholder"
+              key={item.id}
+              title={item.error}
+              onClick={() => setSelectedId(item.id)}
+            >
               <span>⚠️</span>
               <span>Processing failed</span>
-            </div>
+            </button>
           ) : (
-            <div className="media-tile placeholder" key={item.id}>
+            <button className="media-tile placeholder" key={item.id} onClick={() => setSelectedId(item.id)}>
               <span className="spin">⏳</span>
               <span>Processing…</span>
-            </div>
+            </button>
           ),
         )}
       </div>
@@ -324,6 +372,7 @@ function AlbumDetailView({ albumId }: { albumId: string }) {
       {selected && (
         <Lightbox
           item={selected}
+          // Prev/next only steps through viewable items.
           items={readyItems}
           onSelect={setSelectedId}
           onClose={() => setSelectedId(null)}
@@ -363,6 +412,7 @@ function Lightbox({
   onDeleted: () => void;
 }) {
   const { me, isAdmin } = useAuth();
+  const { epoch } = useMediaSessionState();
   const [caption, setCaption] = useState(item.caption ?? "");
   const [takenDate, setTakenDate] = useState(item.takenDate ?? "");
   const [busy, setBusy] = useState(false);
@@ -394,6 +444,11 @@ function Lightbox({
 
   const metadataDirty = caption !== (item.caption ?? "") || takenDate !== (item.takenDate ?? "");
   const canDelete = isAdmin || item.uploadedBy === me.id;
+  const isReady = item.processingStatus === "ready";
+  // The API takes print requests on ready photos only, and cancelling is
+  // requester-or-admin (PRD 5.9) — don't offer buttons that would 400/403.
+  const canPrintRequest = isReady && item.mediaType === "photo";
+  const canCancelPrint = isAdmin || item.printRequestedBy === me.id;
 
   const remove = async () => {
     if (!window.confirm("Delete this from the album? The original is removed too.")) return;
@@ -408,14 +463,26 @@ function Lightbox({
     }
   };
 
-  const webSrc = mediaUrl(item.webKey);
+  const webSrc = isReady ? mediaUrl(item.webKey, epoch) : null;
   return (
     <div className="lightbox" onClick={onClose}>
       <div className="lightbox-inner" onClick={(e) => e.stopPropagation()}>
         <div className="lightbox-media">
           {prev && <button className="lb-nav" onClick={() => onSelect(prev.id)} aria-label="Previous">‹</button>}
-          {item.mediaType === "video" ? (
-            <video controls src={webSrc ?? undefined} poster={mediaUrl(item.posterKey) ?? undefined} />
+          {!isReady ? (
+            // Not viewable yet (or never will be) — still reachable so it can be deleted.
+            <div className="media-thumb fallback" style={{ minHeight: "40vh", flexDirection: "column", gap: "0.5rem" }}>
+              <span>{item.processingStatus === "failed" ? "⚠️" : "⏳"}</span>
+              <span className="muted">
+                {item.processingStatus === "failed"
+                  ? item.error || "Processing failed"
+                  : item.processingStatus === "uploading"
+                    ? "Waiting for the upload to finish"
+                    : "Processing…"}
+              </span>
+            </div>
+          ) : item.mediaType === "video" ? (
+            <video controls src={webSrc ?? undefined} poster={mediaUrl(item.posterKey, epoch) ?? undefined} />
           ) : webSrc ? (
             <img src={webSrc} alt={item.caption || "photo"} />
           ) : (
@@ -459,23 +526,29 @@ function Lightbox({
               </span>
             ) : item.printStatus === "requested" ? (
               <>
-                <span className="chip medium">🖨️ print requested</span>
+                <span className="chip medium">
+                  🖨️ print requested{item.printRequestedByName ? ` by ${item.printRequestedByName}` : ""}
+                </span>
+                {canCancelPrint && (
+                  <button
+                    className="btn small secondary"
+                    disabled={busy}
+                    onClick={() => void run(() => mediaApi.cancelPrintRequest(item.albumId, item.id))}
+                  >
+                    Cancel request
+                  </button>
+                )}
+              </>
+            ) : (
+              canPrintRequest && (
                 <button
                   className="btn small secondary"
                   disabled={busy}
-                  onClick={() => void run(() => mediaApi.cancelPrintRequest(item.albumId, item.id))}
+                  onClick={() => void run(() => mediaApi.requestPrint(item.albumId, item.id))}
                 >
-                  Cancel request
+                  🖨️ Print this
                 </button>
-              </>
-            ) : (
-              <button
-                className="btn small secondary"
-                disabled={busy}
-                onClick={() => void run(() => mediaApi.requestPrint(item.albumId, item.id))}
-              >
-                🖨️ Print this
-              </button>
+              )
             )}
             <span className="spacer" style={{ flex: 1 }} />
             {canDelete && (

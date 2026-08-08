@@ -20,8 +20,9 @@
 #   2. ./deploy.sh --profile DIR            # applies the new public key
 #   3. scripts/media-cf-keys.sh push --profile DIR
 # Between steps 2 and 3 the API still signs with the old key while CloudFront
-# only trusts the new one, so media loads fail; after step 3, browsers recover
-# on their next /media-session refresh or page reload (sessions last 12h max).
+# only trusts the new one, so media loads fail. After step 3 the API picks up the
+# new key within its 5-minute SSM cache TTL, and browsers recover on their next
+# /media-session refresh or page reload (sessions last 12h max).
 set -euo pipefail
 
 die() { echo "error: $*" >&2; exit 1; }
@@ -57,13 +58,40 @@ if [[ "$CMD" == "generate" ]]; then
   chmod 600 "$KEY"
   PUB="$(openssl rsa -in "$KEY" -pubout 2>/dev/null)"
 
-  # Replace the existing media_public_key_pem heredoc block (or append one).
+  # Always keep a copy: this rewrites the operator's only record of project name,
+  # domain, hosted zone, etc.
+  TFVARS_BACKUP="$TFVARS.$(date +%Y%m%d-%H%M%S).bak"
+  cp -p "$TFVARS" "$TFVARS_BACKUP"
+
+  # Drop any existing media_public_key_pem assignment, then append a fresh one.
+  # Terraform allows an indented heredoc terminator and a plain one-line string,
+  # so the terminator match must not assume a bare column-0 EOT — an unterminated
+  # skip would silently swallow the rest of the file.
   TMP="$(mktemp)"
   awk '
-    /^media_public_key_pem[[:space:]]*=/ { skip = 1; next }
-    skip && /^EOT[[:space:]]*$/ { skip = 0; next }
-    !skip { print }
+    skip == 1 {
+      # Heredoc body: ends at the terminator, indented or not.
+      if ($0 ~ ("^[[:space:]]*" term "[[:space:]]*$")) skip = 0
+      next
+    }
+    /^[[:space:]]*media_public_key_pem[[:space:]]*=/ {
+      if (match($0, /<<-?[[:space:]]*[A-Za-z_][A-Za-z0-9_]*/)) {
+        term = substr($0, RSTART, RLENGTH)
+        sub(/^<<-?[[:space:]]*/, "", term)
+        skip = 1
+      }
+      # A single-line assignment ends on this line; nothing to skip.
+      next
+    }
+    { print }
   ' "$TFVARS" > "$TMP"
+
+  # Guard against a malformed parse eating the file.
+  if [[ ! -s "$TMP" && -s "$TFVARS" ]]; then
+    rm -f "$TMP"
+    die "refusing to rewrite $TFVARS — the media_public_key_pem block could not be parsed cleanly (backup at $TFVARS_BACKUP)"
+  fi
+
   {
     cat "$TMP"
     echo "media_public_key_pem = <<-EOT"
@@ -72,8 +100,8 @@ if [[ "$CMD" == "generate" ]]; then
   } > "$TFVARS"
   rm -f "$TMP"
 
-  echo "Wrote $KEY (private, gitignored with the profile dir)"
-  echo "Patched media_public_key_pem in $TFVARS"
+  echo "Wrote $KEY (private — gitignored; never commit it)"
+  echo "Patched media_public_key_pem in $TFVARS (backup: $TFVARS_BACKUP)"
   echo
   echo "Next: ./deploy.sh --profile $PROFILE   then   $0 push --profile $PROFILE"
   exit 0
@@ -82,10 +110,16 @@ fi
 # push
 [[ -f "$KEY" ]] || die "no private key at $KEY — run '$0 generate --profile $PROFILE' first"
 if [[ -z "$PARAM" ]]; then
-  PARAM="$(terraform -chdir="$REPO_ROOT/infra" output -raw media_cf_private_key_param 2>/dev/null)" \
+  # deploy.sh keeps state in the profile dir unless the profile has a backend.hcl
+  # (see its STATE_ARGS) — mirror that here or `terraform output` finds no state.
+  STATE_ARGS=()
+  [[ ! -f "$PROFILE/backend.hcl" && -f "$PROFILE/terraform.tfstate" ]] &&
+    STATE_ARGS=(-state="$PROFILE/terraform.tfstate")
+  PARAM="$(terraform -chdir="$REPO_ROOT/infra" output "${STATE_ARGS[@]}" -raw media_cf_private_key_param 2>/dev/null)" \
     || die "could not read terraform output media_cf_private_key_param — run deploy.sh for this profile first, or pass --param NAME"
 fi
 aws ssm put-parameter --name "$PARAM" --type SecureString --overwrite \
   --value "file://$KEY" > /dev/null
 echo "Private key pushed to SSM parameter: $PARAM"
-echo "Existing browser sessions recover on their next /media-session refresh or page reload."
+echo "The API caches the signing key for up to 5 minutes, so allow that long for"
+echo "warm Lambda containers to pick up a rotated key before testing."

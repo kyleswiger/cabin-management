@@ -37,6 +37,9 @@ export interface MediaItem {
   createdAt: string;
   /** Print queue (PRD 5.9) — photos only; videos stay "none". */
   printStatus: "none" | "requested" | "printed";
+  /** Cognito sub of the requester. */
   printRequestedBy?: string;
+  /** Denormalized display name so the print queue needs no user join. */
+  printRequestedByName?: string;
   printedDate?: string;
 }

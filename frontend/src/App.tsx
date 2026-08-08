@@ -16,7 +16,7 @@ import AdminPage from "./pages/Admin";
 import ProfilePage from "./pages/Profile";
 import GalleryPage from "./pages/Gallery";
 import PrintsPage from "./pages/Prints";
-import { useMediaSession } from "./media";
+import { clearMediaSession, useMediaSession } from "./media";
 
 interface AuthState {
   me: Profile;
@@ -63,6 +63,9 @@ export default function App() {
 
   const signOut = () => {
     logout();
+    // Expire the CloudFront cookies too, or the browser keeps direct /media/*
+    // access for the rest of the 12h policy window after signing out.
+    clearMediaSession();
     setMe(null);
   };
 

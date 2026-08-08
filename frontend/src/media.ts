@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { api } from "./api";
 
 /**
@@ -18,6 +18,11 @@ export interface Album {
   title: string;
   createdBy: string;
   createdAt: string;
+}
+
+/** GET /albums only — itemCount/coverThumbKey are computed by the list route
+ * and are NOT returned by GET /albums/:id, so they can't live on Album. */
+export interface AlbumSummary extends Album {
   itemCount: number;
   coverThumbKey?: string;
 }
@@ -65,7 +70,7 @@ export interface PresignedUpload {
 }
 
 export const mediaApi = {
-  listAlbums: () => api.get<Album[]>("/albums"),
+  listAlbums: () => api.get<AlbumSummary[]>("/albums"),
   /** Reference-album creation is admin-only (PRD 5.8) — callers hide the option for members. */
   createAlbum: (body: { type: AlbumType; title: string; slug?: string }) =>
     api.post<Album>("/albums", body),
@@ -96,9 +101,13 @@ export function fmtDay(d: string): string {
  * Media is served same-origin from the private bucket via the /media/* CloudFront
  * behavior, gated by signed cookies (PRD 5.8 viewing). In dev (localhost:5173)
  * these URLs don't resolve — <MediaThumb> degrades to a placeholder tile.
+ *
+ * `epoch` bumps every time a new signed-cookie session installs; including it in
+ * the URL is what makes an <img> that 403'd before the cookies existed actually
+ * re-request instead of staying broken for the life of the page.
  */
-export function mediaUrl(key: string | undefined): string | null {
-  return key ? `/media/${key}` : null;
+export function mediaUrl(key: string | undefined, epoch = 0): string | null {
+  return key ? `/media/${key}${epoch ? `?s=${epoch}` : ""}` : null;
 }
 
 /* ---------------------------------------------------------------------------
@@ -111,6 +120,41 @@ interface MediaSession {
   expiresAt: string | number;
 }
 
+/** Cookie names are fixed by CloudFront; used to expire them on sign-out. */
+const CF_COOKIE_NAMES = ["CloudFront-Policy", "CloudFront-Signature", "CloudFront-Key-Pair-Id"];
+const MEDIA_COOKIE_PATH = "/media";
+
+export type MediaSessionStatus = "pending" | "ready" | "error";
+
+interface MediaSessionState {
+  status: MediaSessionStatus;
+  /** Incremented on each successful install — see mediaUrl(). */
+  epoch: number;
+}
+
+let sessionState: MediaSessionState = { status: "pending", epoch: 0 };
+const sessionListeners = new Set<() => void>();
+
+function setSessionState(next: MediaSessionState) {
+  sessionState = next;
+  for (const l of sessionListeners) l();
+}
+
+/**
+ * Media-session status for components that render /media/* URLs. Gating on
+ * "pending" avoids the race where an album's images are requested before the
+ * cookies are installed; `epoch` forces a retry after a late or recovered install.
+ */
+export function useMediaSessionState(): MediaSessionState {
+  return useSyncExternalStore(
+    (onChange) => {
+      sessionListeners.add(onChange);
+      return () => sessionListeners.delete(onChange);
+    },
+    () => sessionState,
+  );
+}
+
 function expiresAtMs(expiresAt: string | number): number {
   if (typeof expiresAt === "number") return expiresAt > 1e12 ? expiresAt : expiresAt * 1000;
   return Date.parse(expiresAt);
@@ -120,15 +164,25 @@ function expiresAtMs(expiresAt: string | number): number {
 async function refreshMediaSession(): Promise<number> {
   const session = await api.post<MediaSession>("/media-session", {});
   for (const [name, value] of Object.entries(session.cookies)) {
-    document.cookie = `${name}=${value}; Path=/media; Secure; SameSite=Lax`;
+    document.cookie = `${name}=${value}; Path=${MEDIA_COOKIE_PATH}; Secure; SameSite=Lax`;
   }
   return expiresAtMs(session.expiresAt) - Date.now();
+}
+
+/** Expire the signed cookies — a signed-out browser must lose /media/* access
+ * immediately rather than keeping it for the rest of the 12h policy window. */
+export function clearMediaSession(): void {
+  for (const name of CF_COOKIE_NAMES) {
+    document.cookie = `${name}=; Path=${MEDIA_COOKIE_PATH}; Max-Age=0; Secure; SameSite=Lax`;
+  }
+  setSessionState({ status: "pending", epoch: 0 });
 }
 
 /**
  * Keep a media session alive while signed in: fetch cookies on load and
  * re-fetch shortly before they expire. Errors retry on a backoff so a missing
- * backend (dev) or a hiccup never breaks the app — media just shows fallbacks.
+ * backend (dev) or a hiccup never breaks the app — media shows fallbacks until
+ * a retry succeeds, at which point the epoch bump re-requests them.
  */
 export function useMediaSession(enabled: boolean): void {
   useEffect(() => {
@@ -139,12 +193,14 @@ export function useMediaSession(enabled: boolean): void {
       let delayMs = 60_000; // retry fallback when the call fails
       try {
         const remainingMs = await refreshMediaSession();
+        if (!cancelled) setSessionState({ status: "ready", epoch: sessionState.epoch + 1 });
         if (Number.isFinite(remainingMs)) {
           // Refresh 5 minutes early, but never sooner than 1 minute out.
           delayMs = Math.max(60_000, remainingMs - 5 * 60_000);
         }
       } catch {
-        // Swallow — see docstring.
+        // Swallow — see docstring. Status drives the UI's fallback tiles.
+        if (!cancelled) setSessionState({ status: "error", epoch: sessionState.epoch });
       }
       if (!cancelled) timer = window.setTimeout(() => void run(), delayMs);
     };
@@ -160,14 +216,18 @@ export function useMediaSession(enabled: boolean): void {
  * Upload helpers (PRD 5.8 upload mechanics)
  * ------------------------------------------------------------------------- */
 
-/** iPhone HEIC/MOV files often reach the browser with an empty File.type. */
+/**
+ * Must stay in lockstep with PHOTO_EXTS/VIDEO_EXTS in
+ * backend/src/api/routes/media.ts — offering a format the presign route rejects
+ * just produces a 400 after the user has already picked the file. (The server
+ * derives the real Content-Type; this only fills in File.type, which iPhone
+ * HEIC/MOV files often leave empty.)
+ */
 const EXTENSION_CONTENT_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   png: "image/png",
-  gif: "image/gif",
   webp: "image/webp",
-  avif: "image/avif",
   heic: "image/heic",
   heif: "image/heif",
   mp4: "video/mp4",
@@ -175,7 +235,8 @@ const EXTENSION_CONTENT_TYPES: Record<string, string> = {
   mov: "video/quicktime",
 };
 
-export const UPLOAD_ACCEPT = "image/*,video/*,.heic,.heif,.mov,.mp4,.m4v";
+export const UPLOAD_ACCEPT =
+  ".jpg,.jpeg,.png,.webp,.heic,.heif,.mov,.mp4,.m4v,image/jpeg,image/png,image/webp,image/heic,image/heif,video/quicktime,video/mp4";
 
 export function fileContentType(file: File): string {
   if (file.type) return file.type;
