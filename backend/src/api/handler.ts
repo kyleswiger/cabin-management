@@ -4,6 +4,7 @@ import * as reservations from "./routes/reservations.js";
 import * as supplies from "./routes/supplies.js";
 import * as projects from "./routes/projects.js";
 import * as chores from "./routes/chores.js";
+import * as treks from "./routes/treks.js";
 import * as users from "./routes/users.js";
 import * as settings from "./routes/settings.js";
 import * as albums from "./routes/albums.js";
@@ -44,6 +45,11 @@ const routes: Array<[string, string, RouteHandler]> = [
   ["POST", "/guestbook", (c, _p, e) => guestbook.createEntry(c, parseBody(e))],
   ["PUT", "/guestbook/:id", (c, p, e) => guestbook.updateEntry(c, p.id, parseBody(e))],
   ["DELETE", "/guestbook/:id", (c, p) => guestbook.deleteEntry(c, p.id)],
+  // Area guide (PRD 5.11): any member adds/edits; delete is creator-or-admin.
+  ["GET", "/treks", () => treks.listTreks()],
+  ["POST", "/treks", (c, _p, e) => treks.createTrek(c, parseBody(e))],
+  ["PUT", "/treks/:id", (c, p, e) => treks.updateTrek(c, p.id, parseBody(e))],
+  ["DELETE", "/treks/:id", (c, p) => treks.deleteTrek(c, p.id)],
 
   ["GET", "/chores", () => chores.listChores()],
   ["POST", "/chores", (c, _p, e) => chores.logChore(c, parseBody(e))],
