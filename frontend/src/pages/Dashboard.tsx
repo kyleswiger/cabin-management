@@ -103,6 +103,17 @@ export default function DashboardPage() {
           <Link to="/supplies" className="muted">Supply checklist →</Link>
         </div>
 
+        {data.latestGuestbookEntry && (
+          <div className="card">
+            <h2>Guestbook</h2>
+            <p className="big">📖 {data.latestGuestbookEntry.title}</p>
+            <p className="muted">
+              {data.latestGuestbookEntry.authorName} · {fmt(data.latestGuestbookEntry.visitStart)}
+            </p>
+            <Link to="/guestbook" className="muted">Read the guestbook →</Link>
+          </div>
+        )}
+
         <div className="card" style={{ gridColumn: "1 / -1" }}>
           <h2>Open projects ({data.openProjects.length})</h2>
           {data.openProjects.length === 0 ? (
