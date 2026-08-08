@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import type { Dashboard } from "../types";
 import { branding } from "../branding";
+import { mediaApi } from "../media";
 
 function fmt(dateISO: string): string {
   return new Date(dateISO + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
@@ -14,6 +15,12 @@ export default function DashboardPage() {
 
   useEffect(() => {
     api.get<Dashboard>("/dashboard").then(setData).catch((e) => setError((e as Error).message));
+  }, []);
+
+  // Pending print-queue count (PRD 5.7/5.9) — best-effort, tile only renders when > 0.
+  const [printPending, setPrintPending] = useState(0);
+  useEffect(() => {
+    mediaApi.getPrintQueue().then((q) => setPrintPending(q.requested.length)).catch(() => {});
   }, []);
 
   if (error) return <div className="error">{error}</div>;
@@ -122,6 +129,14 @@ export default function DashboardPage() {
           )}
           <p style={{ marginBottom: 0 }}><Link to="/projects" className="muted">Project tracker →</Link></p>
         </div>
+
+        {printPending > 0 && (
+          <div className="card">
+            <h2>Print queue</h2>
+            <p className="big">🖨️ {printPending} photo{printPending === 1 ? "" : "s"} waiting to print</p>
+            <Link to="/prints" className="muted">Open print queue →</Link>
+          </div>
+        )}
       </div>
     </>
   );
