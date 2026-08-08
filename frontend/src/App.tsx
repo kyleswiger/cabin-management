@@ -10,8 +10,13 @@ import CalendarPage from "./pages/Calendar";
 import SuppliesPage from "./pages/Supplies";
 import ProjectsPage from "./pages/Projects";
 import YardworkPage from "./pages/Yardwork";
+import GuestbookPage from "./pages/Guestbook";
+import TreksPage from "./pages/Treks";
 import AdminPage from "./pages/Admin";
 import ProfilePage from "./pages/Profile";
+import GalleryPage from "./pages/Gallery";
+import PrintsPage from "./pages/Prints";
+import { useMediaSession } from "./media";
 
 interface AuthState {
   me: Profile;
@@ -50,6 +55,9 @@ export default function App() {
     void loadMe();
   }, [loadMe]);
 
+  // CloudFront signed cookies for /media/* while signed in (PRD 5.8 viewing).
+  useMediaSession(me !== null);
+
   if (!checked) return null;
   if (!me) return <LoginPage onSignedIn={loadMe} />;
 
@@ -67,6 +75,10 @@ export default function App() {
         <NavLink to="/supplies">Supplies</NavLink>
         <NavLink to="/projects">Projects</NavLink>
         <NavLink to="/yardwork">Yardwork</NavLink>
+        <NavLink to="/gallery">Gallery</NavLink>
+        <NavLink to="/prints">Prints</NavLink>
+        <NavLink to="/guestbook">Guestbook</NavLink>
+        <NavLink to="/treks">Area guide</NavLink>
         {me.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
         <span className="spacer" />
         <NavLink to="/profile">{me.name.split(" ")[0]}</NavLink>
@@ -79,6 +91,11 @@ export default function App() {
           <Route path="/supplies" element={<SuppliesPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/yardwork" element={<YardworkPage />} />
+          <Route path="/gallery" element={<GalleryPage />} />
+          <Route path="/gallery/:albumId" element={<GalleryPage />} />
+          <Route path="/prints" element={<PrintsPage />} />
+          <Route path="/guestbook" element={<GuestbookPage />} />
+          <Route path="/treks" element={<TreksPage />} />
           <Route path="/admin" element={me.role === "admin" ? <AdminPage /> : <Navigate to="/" />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<Navigate to="/" />} />

@@ -19,6 +19,7 @@ export async function updateSettings(caller: Caller, body: Partial<Record<keyof 
   if (body.vacancyThresholdDays !== undefined) updated.vacancyThresholdDays = parsePositiveInt(body.vacancyThresholdDays, "vacancyThresholdDays", 365);
   if (body.preVisitReminderDays !== undefined) updated.preVisitReminderDays = parsePositiveInt(body.preVisitReminderDays, "preVisitReminderDays", 30);
   if (body.notifyOnProjectUpdates !== undefined) updated.notifyOnProjectUpdates = Boolean(body.notifyOnProjectUpdates);
+  if (body.guestbookNudgeEnabled !== undefined) updated.guestbookNudgeEnabled = Boolean(body.guestbookNudgeEnabled);
   if (body.priorityUserId !== undefined) {
     if (body.priorityUserId === null || body.priorityUserId === "") {
       updated.priorityUserId = null;

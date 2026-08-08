@@ -34,7 +34,7 @@ const now = new Date().toISOString();
 // generic starting point.
 const dataFile =
   process.argv[2] ?? fileURLToPath(new URL("seed-data.example.json", import.meta.url));
-const { projects, supplies } = JSON.parse(readFileSync(dataFile, "utf8"));
+const { projects, supplies, treks = [] } = JSON.parse(readFileSync(dataFile, "utf8"));
 console.log(`Seeding from ${dataFile}`);
 
 if (await hasAny("PROJECT")) {
@@ -74,6 +74,32 @@ if (await hasAny("SUPPLY")) {
       })
     );
     console.log(`Seeded supply: ${name}`);
+  }
+}
+
+// Area guide (PRD 5.11, starter entries in PRD 9.3).
+if (await hasAny("TREK")) {
+  console.log("Treks already seeded, skipping.");
+} else {
+  for (const t of treks) {
+    const id = randomUUID();
+    await ddb.send(
+      new PutCommand({
+        TableName: TABLE,
+        Item: {
+          PK: `TREK#${id}`,
+          SK: "META",
+          GSI1PK: "TREK",
+          GSI1SK: t.name.toLowerCase(),
+          id,
+          addedBy: "seed",
+          addedByName: "seed",
+          createdAt: now,
+          ...t,
+        },
+      })
+    );
+    console.log(`Seeded trek: ${t.name}`);
   }
 }
 

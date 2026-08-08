@@ -51,6 +51,18 @@ variable "sms_number_type" {
   }
 }
 
+variable "media_public_key_pem" {
+  description = <<-EOT
+    PEM-encoded 2048-bit RSA PUBLIC key for CloudFront signed cookies on /media/* (PRD 5.8).
+    Generate the pair once per deployment:
+      openssl genrsa -out media_cf_private_key.pem 2048
+      openssl rsa -in media_cf_private_key.pem -pubout -out media_cf_public_key.pem
+    Paste the public key here (tfvars). The PRIVATE key never enters Terraform —
+    store it in the SSM parameter after the first apply (see media.tf).
+  EOT
+  type        = string
+}
+
 locals {
   use_custom_domain = var.custom_domain != ""
 

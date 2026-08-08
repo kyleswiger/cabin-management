@@ -175,6 +175,17 @@ export default function AdminPage() {
                 Text everyone when a project status changes or someone chips in
               </label>
             </div>
+            <div className="field">
+              <label>
+                <input
+                  type="checkbox"
+                  style={{ width: "auto", marginRight: "0.5rem" }}
+                  checked={settings.guestbookNudgeEnabled}
+                  onChange={(e) => setSettings({ ...settings, guestbookNudgeEnabled: e.target.checked })}
+                />
+                Text visitors the day after checkout to add a guestbook entry
+              </label>
+            </div>
             <button className="btn" disabled={busy}>Save settings</button>
           </form>
         </div>

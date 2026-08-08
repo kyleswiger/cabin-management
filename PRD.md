@@ -1,8 +1,8 @@
 # Cabin Management Site — Product Requirements Document
 
-**Status:** Draft v1
+**Status:** Draft v2
 **Owner:** Property admin
-**Last updated:** 2026-07-04
+**Last updated:** 2026-08-07
 
 ## 1. Problem Statement
 
@@ -81,7 +81,43 @@ Small, fixed group (~2–6 households). No public signup — every account is pr
 - SMS is the only channel for v1 (per product decision); email may be added later as a fallback channel if SNS SMS costs or deliverability become an issue.
 
 ### 5.7 Dashboard (Home Page)
-- At-a-glance view after login: next reservation, who's currently at the cabin (if anyone), current supply low/out items, open maintenance items, last time yardwork was logged.
+- At-a-glance view after login: next reservation, who's currently at the cabin (if anyone), current supply low/out items, open maintenance items, last time yardwork was logged, pending print-queue count (§5.9), and the latest guestbook entry (§5.10).
+
+### 5.8 Photo Gallery
+Two kinds of albums, one shared media pipeline:
+
+- **Trip albums** — general photos/videos from visits ("July 4th weekend"), optionally linked to a reservation or guestbook entry. Anyone can create an album and upload to any album.
+- **Reference albums** — living "current state of X" documentation: the yard, the fridge, the pantry/dry storage, the water shutoff, the breaker panel. The newest photo in a reference album is treated as the canonical "here's what it looks like right now" shot; older photos are kept as history. The Supplies page links to the fridge/pantry reference albums so "what's actually up there" is one tap from the checklist. **Creating reference albums is admin-only** (keeps the set tidy); uploading into them is open to all members. Seeded at launch — see §9.
+
+Mechanics:
+
+- **Upload:** the browser PUTs the *original file, untouched and in its native format* (JPEG, HEIC/HEIF from iPhone or Android, MOV/HEVC, MP4) straight to S3 via a presigned URL from the API. Originals are the archival copy — kept forever in the original format for later retrieval at full quality.
+- **Processing:** an S3 upload event triggers a media-processing Lambda that writes web derivatives alongside the original: photos get a web-size JPEG (~2560px long edge) + thumbnail; videos get a poster frame, and non-web-playable formats (HEVC .mov) get an H.264 MP4 via an on-demand MediaConvert job. Image work uses **sharp on a custom Lambda layer** (libvips compiled with libheif for HEIC/HEIF decode — the prebuilt sharp binaries exclude it), built reproducibly via a Docker script checked into the repo. Native-speed conversion keeps per-image processing sub-second at any realistic volume. The gallery UI shows items as "processing" until derivatives land.
+- **Viewing:** the media bucket is fully private, served through a `/media/*` CloudFront behavior (Origin Access Control) gated by **CloudFront signed cookies** issued at login — one auth decision per session, full CDN caching, no per-object URL churn. Requires a CloudFront key group: public key in Terraform, private signing key in SSM, cookies set by the API after Cognito auth. (Presigned GET URLs were the simpler alternative, but signed cookies cache better and the implementation is deliberately worth the practice.)
+- **Metadata:** caption, uploaded-by, optional taken-date. Delete is uploader-or-admin and removes original + derivatives.
+- **Storage/cost:** lifecycle rules split by prefix — derivatives → Infrequent Access after 90 days; originals → Glacier Instant Retrieval after 90 days (~$0.004/GB-mo, still instantly retrievable). Even 50 GB of originals ≈ $0.20/mo at rest. MediaConvert is pay-per-job (~$0.01–0.02/min of video) with zero idle cost.
+
+### 5.9 Print Queue
+The physical cabin album/wall, fed by the digital gallery:
+
+- Any member can flag any photo "print this" from the gallery.
+- A queue page lists flagged photos with who requested each; whoever has the photo printer works through it between trips and marks items printed (date logged automatically).
+- The printed history doubles as the record of what's already in the physical album — no duplicate prints.
+- Dashboard surfaces the pending count so the printer-owner sees new requests without being nagged.
+
+### 5.10 Guestbook
+A digital version of the classic cabin logbook:
+
+- One entry per visit: title, free-text story, visit dates (pre-filled from the author's most recent reservation when there is one), and optional linked photos from the gallery.
+- Reverse-chronological reading view visible to all members; edit is author-or-admin.
+- Optional post-checkout SMS nudge ("add a guestbook entry for your trip") piggybacks on the existing daily reminders Lambda — admin-toggleable in Settings, off by default.
+
+### 5.11 Local Treks & Area Guide
+A curated directory of what's around, so nobody re-researches the same trail or drives past the good hardware store:
+
+- Entries have: name, category (**hike/paddle**, **food & drink**, **attraction**, **essentials** — grocery, hardware, dump station, urgent care), description/tips, drive time from the cabin, and an external link (Google Maps / AllTrails).
+- Anyone can add or edit entries — it's a living guide like the supply checklist, not admin-curated content.
+- Guestbook entries pair naturally ("we did the falls loop — see the trek entry"), but cross-linking is future work (§10), not v1 of this feature.
 
 ## 6. Architecture (fully serverless, AWS)
 
@@ -93,11 +129,14 @@ Browser
   ├── Route 53 (custom domain) + ACM (TLS)
   │
   ├── CloudFront ── S3 (static site: React/Vite SPA build)
+  │        └── /media/* behavior (signed cookies + OAC) ── S3 (private media bucket)
   │
   └── CloudFront/API Gateway (HTTP API) ── AWS Lambda ── DynamoDB (on-demand)
                                               │
                                               ├── Cognito User Pool (auth, invite-only)
                                               ├── SNS (SMS notifications)
+                                              ├── S3 media bucket (presigned PUT for uploads)
+                                              │      └── S3 event → media-processing Lambda ── MediaConvert (video, on-demand)
                                               └── EventBridge Scheduler (daily cron → reminder-evaluation Lambda)
 ```
 
@@ -109,6 +148,9 @@ Browser
 | API | API Gateway (HTTP API) + Lambda | One Lambda per resource area (reservations, chores, supplies, projects) or a single Lambda with internal routing — implementation detail, not a v1 requirement either way. |
 | Data | DynamoDB (on-demand billing) | Single table or a handful of small tables; no provisioned capacity to manage. |
 | Scheduled reminders | EventBridge Scheduler + Lambda | Runs daily, evaluates vacancy gaps/upcoming reservations, publishes to SNS. |
+| Media storage | S3 (separate private media bucket) | Originals uploaded via presigned PUT, kept forever in native format; derivatives written by the processing Lambda. Lifecycle by prefix: derivatives → IA, originals → Glacier Instant Retrieval, both at 90 days. |
+| Media serving | CloudFront `/media/*` + signed cookies | Same distribution as the SPA (so cookies flow); OAC to the media bucket; key group public key in Terraform, private signing key in SSM; API sets the cookies at login. |
+| Media processing | Lambda (S3 event) + MediaConvert | Lambda: HEIC→JPEG, web-size + thumbnail, video poster frames via sharp on a custom layer (libvips + libheif, Docker-built). MediaConvert: H.264 MP4 only for non-web-playable video, pay-per-job. |
 | Notifications | SNS (SMS) | Requires moving the AWS account SMS spend out of the default sandbox limit — a one-time account setup step. |
 | IaC | Terraform | The whole stack is one self-contained Terraform root module with its own state — it shares nothing with any other project. |
 
@@ -125,6 +167,10 @@ Browser
 | **Project** | id, title, description, status, priority, estimated_cost |
 | **Contribution** | id, project_id, user_id, amount, date, note |
 | **NotificationLog** | id, user_id, type, sent_date, payload (for debugging/audit, not user-facing) |
+| **Album** | id, type (trip/reference), title, created_by; reference albums carry a well-known slug (yard, fridge, pantry) for deep links |
+| **MediaItem** | id, album_id, media_type (photo/video), original_key, original_format, web_key, thumb_key, poster_key, processing_status, caption, uploaded_by, taken_date, print_status (none/requested/printed — photos only), print_requested_by, printed_date |
+| **GuestbookEntry** | id, author, title, body, visit_start, visit_end, media_ids |
+| **Trek** | id, name, category (hike/food/attraction/essentials), description, drive_minutes, link, added_by |
 
 ## 8. Non-Functional Requirements
 
@@ -133,7 +179,9 @@ Browser
 - **Reliability:** Scheduled reminder job must run daily even with zero active users (EventBridge, not a browser-triggered check).
 - **Simplicity of ops:** Small user base — no need for multi-region, autoscaling policies, or elaborate observability; basic CloudWatch logs/alarms are sufficient.
 
-## 9. Seeded Maintenance Backlog (initial data at launch)
+## 9. Seed Data (initial content at launch)
+
+### 9.1 Maintenance backlog
 
 | Item | Notes |
 |---|---|
@@ -144,10 +192,36 @@ Browser
 | Security cameras | New install |
 | Ethernet cabling (wired backhaul for cameras/AP) | New install, likely paired with camera project |
 
+### 9.2 Reference albums (admin-only creation, see §5.8)
+
+| Album | Why |
+|---|---|
+| Yard & grounds | Drives the "does it need mowed" call without asking whoever was last up |
+| Fridge | Linked from the Supplies page — what's actually there before shopping |
+| Pantry & dry goods | Same, for nonperishables |
+| Firewood | Stock level before a cold-weather trip |
+| Water shutoff / well | Find-it-fast documentation for open/close-up and emergencies |
+| Electrical panel | Which breaker is which |
+| Roof & gutters | Condition history — pairs with the roof moss backlog item |
+
+### 9.3 Area guide (§5.11)
+
+| Name | Category | Notes |
+|---|---|---|
+| Ohiopyle State Park | Hike/paddle | White water rafting, hiking, biking, swimming, natural water slides |
+| Quebec Run Wild Area | Hike/paddle | Family Reunion Hiking Trail |
+| Fort Necessity | Attraction | National battlefield |
+| Uniontown | Essentials | Walmart, Home Depot, Lowe's, GameStop, vape store, etc. |
+| Braddock's Inn | Food & drink | Restaurant and tavern |
+| Maywood Grill | Food & drink | Breakfast and lunch |
+
 ## 10. Future Work (explicitly out of scope for v1)
 
 - Email as a secondary notification channel.
-- Photo uploads attached to projects/chores (e.g., "here's the mowed yard" or "here's the roof moss").
+- Photo attachments on projects/chores (e.g., "here's the roof moss") — straightforward once the §5.8 media pipeline exists; a project photo is just a photo whose parent is a project instead of an album.
+- Cross-linking guestbook entries to treks ("we did the falls loop" → the trek entry).
+- A "cabin manual": how-to guides (water on/off, septic rules, wood stove) pairing §5.8 reference photos with step-by-step instructions.
+- Map view for the area guide (pins for treks/essentials).
 - Weather-aware reminders (e.g., skip mow reminder if snow-covered).
 - Direct links to camera footage/clips once cameras are installed.
 - Guest-mode / temporary access for visitors outside the member group.
@@ -159,9 +233,13 @@ Browser
 3. Default vacancy threshold for yardwork reminders — is 14 days the right number, or should it vary by season (e.g., shorter in peak summer growth)?
 4. Should the first-look window (default 45 days) differ by season/holiday, or is a flat number fine?
 5. Who beyond the initial owner should have Admin rights (backlog editing, user invites)?
+6. Should the print queue notify the printer-owner (SMS) when a request lands, or is the dashboard count enough?
 
 ## 12. Phased Rollout
 
 - **Phase 1 (MVP):** Private login, reservation calendar with the first-look rule, supply checklist, seeded maintenance backlog (read/update, no ledger yet).
 - **Phase 2:** SMS notifications (pre-visit reminders, checkout reminders), occupancy-driven yardwork reminder logic, project contribution ledger.
-- **Phase 3:** Dashboard polish, future-work items from §10 as prioritized.
+- **Phase 3:** Dashboard polish.
+- **Phase 4 — Media:** photo/video gallery with trip + reference albums (§5.8), print queue (§5.9). This lands the media pipeline — presigned uploads of originals, S3-event processing Lambda (HEIC conversion, thumbnails, MediaConvert for video), CloudFront signed-cookie serving — that later media features build on.
+- **Phase 5 — Memories & area guide:** guestbook (§5.10), local treks directory (§5.11), optional post-checkout guestbook nudge, dashboard tiles for print count and latest guestbook entry.
+- **Beyond:** remaining future-work items from §10 as prioritized.

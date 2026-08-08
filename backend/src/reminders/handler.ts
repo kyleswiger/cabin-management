@@ -6,7 +6,8 @@ import type { Reservation } from "../api/routes/reservations.js";
 import type { SupplyItem } from "../api/routes/supplies.js";
 import type { ChoreLog } from "../api/routes/chores.js";
 import type { Profile } from "../lib/users.js";
-import { APP_NAME } from "../lib/branding.js";
+import type { GuestbookEntry } from "../api/routes/guestbook.js";
+import { APP_NAME, PROPERTY_NOUN } from "../lib/branding.js";
 
 /**
  * Subject lines per reminder type. SMS carries the whole message in one line; email needs a
@@ -104,6 +105,30 @@ export async function handler(): Promise<{ sent: number }> {
           ? `${APP_NAME}: welcome up! Last mow was ${lastMow} (${daysSinceMowAt(today)} days ago) — the yard likely needs mowing/trimming.`
           : `${APP_NAME}: welcome up! No mow is on record — the yard likely needs mowing/trimming.`
       );
+    }
+  }
+
+  // 4. Post-checkout guestbook nudge (PRD 5.10): the day after checkout, ask the visit's
+  // creator to write an entry — unless they already wrote one covering that visit. SMS only,
+  // and admin-toggleable via `guestbookNudgeEnabled` (off by default).
+  if (settings.guestbookNudgeEnabled) {
+    const entries = await queryType<GuestbookEntry>("GUESTBOOK");
+    for (const r of reservations.filter((r) => daysBetween(r.endDate, today) === 1)) {
+      // "Already wrote one" = an entry by the same author whose inclusive visit range touches the
+      // reservation's [startDate, endDate] — so an entry dated anywhere within the stay counts.
+      const alreadyWrote = entries.some(
+        (e) => e.author === r.createdBy && e.visitStart <= r.endDate && r.startDate <= e.visitEnd
+      );
+      if (alreadyWrote) continue;
+      const profile = profileById.get(r.createdBy);
+      await sendSms({
+        userId: r.createdBy,
+        phone: profile?.phone,
+        consent: profile?.smsConsent,
+        type: "guestbook_nudge",
+        message: `${APP_NAME}: hope you had a great stay! Take a minute to add a guestbook entry about your trip — the ${PROPERTY_NOUN} logbook is how we all relive it.`,
+      });
+      sent++;
     }
   }
 

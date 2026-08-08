@@ -22,6 +22,20 @@ output "user_pool_client_id" {
   value = aws_cognito_user_pool_client.spa.id
 }
 
+output "media_bucket" {
+  value = aws_s3_bucket.media.bucket
+}
+
+output "media_cf_key_pair_id" {
+  value = aws_cloudfront_public_key.media.id
+}
+
+# Target for the operator's one-time `aws ssm put-parameter` of the private
+# signing key (see media.tf).
+output "media_cf_private_key_param" {
+  value = aws_ssm_parameter.media_cf_private_key.name
+}
+
 output "table_name" {
   value = aws_dynamodb_table.main.name
 }
