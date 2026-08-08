@@ -65,6 +65,23 @@ export interface Settings {
   preVisitReminderDays: number;
   priorityUserId: string | null;
   notifyOnProjectUpdates: boolean;
+  /** Post-checkout SMS nudge to add a guestbook entry (PRD 5.10). Off by default. */
+  guestbookNudgeEnabled: boolean;
+}
+
+/** One journal entry per visit — the digital cabin logbook (PRD 5.10). */
+export interface GuestbookEntry {
+  id: string;
+  author: string;
+  authorName: string;
+  title: string;
+  body: string;
+  /** Inclusive YYYY-MM-DD visit dates. */
+  visitStart: string;
+  visitEnd: string;
+  /** Gallery photo links (PRD 5.8/5.10) — stored now, linking UI ships with the gallery. */
+  mediaIds: string[];
+  createdAt: string;
 }
 
 export interface Dashboard {
@@ -78,6 +95,7 @@ export interface Dashboard {
   lastTrim: ChoreLog | null;
   lowOutSupplies: SupplyItem[];
   openProjects: Project[];
+  latestGuestbookEntry: Pick<GuestbookEntry, "id" | "title" | "authorName" | "visitStart"> | null;
   settings: Settings;
 }
 

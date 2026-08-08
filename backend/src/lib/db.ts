@@ -41,6 +41,8 @@ export interface Settings {
   preVisitReminderDays: number;
   priorityUserId: string | null;
   notifyOnProjectUpdates: boolean;
+  /** Post-checkout SMS nudge to add a guestbook entry (PRD 5.10). Off by default. */
+  guestbookNudgeEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -49,6 +51,7 @@ export const DEFAULT_SETTINGS: Settings = {
   preVisitReminderDays: 3,
   priorityUserId: null,
   notifyOnProjectUpdates: true,
+  guestbookNudgeEnabled: false,
 };
 
 export async function getSettings(): Promise<Settings> {

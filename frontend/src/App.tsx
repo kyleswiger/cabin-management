@@ -10,6 +10,7 @@ import CalendarPage from "./pages/Calendar";
 import SuppliesPage from "./pages/Supplies";
 import ProjectsPage from "./pages/Projects";
 import YardworkPage from "./pages/Yardwork";
+import GuestbookPage from "./pages/Guestbook";
 import AdminPage from "./pages/Admin";
 import ProfilePage from "./pages/Profile";
 
@@ -67,6 +68,7 @@ export default function App() {
         <NavLink to="/supplies">Supplies</NavLink>
         <NavLink to="/projects">Projects</NavLink>
         <NavLink to="/yardwork">Yardwork</NavLink>
+        <NavLink to="/guestbook">Guestbook</NavLink>
         {me.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
         <span className="spacer" />
         <NavLink to="/profile">{me.name.split(" ")[0]}</NavLink>
@@ -79,6 +81,7 @@ export default function App() {
           <Route path="/supplies" element={<SuppliesPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/yardwork" element={<YardworkPage />} />
+          <Route path="/guestbook" element={<GuestbookPage />} />
           <Route path="/admin" element={me.role === "admin" ? <AdminPage /> : <Navigate to="/" />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<Navigate to="/" />} />

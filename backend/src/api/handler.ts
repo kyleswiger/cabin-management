@@ -6,6 +6,7 @@ import * as projects from "./routes/projects.js";
 import * as chores from "./routes/chores.js";
 import * as users from "./routes/users.js";
 import * as settings from "./routes/settings.js";
+import * as guestbook from "./routes/guestbook.js";
 import { getDashboard } from "./routes/dashboard.js";
 import { listNotifications } from "./routes/notifications.js";
 
@@ -36,6 +37,11 @@ const routes: Array<[string, string, RouteHandler]> = [
   ["PUT", "/projects/:id", (c, p, e) => projects.updateProject(c, p.id, parseBody(e))],
   ["DELETE", "/projects/:id", (c, p) => projects.deleteProject(c, p.id)],
   ["POST", "/projects/:id/contributions", (c, p, e) => projects.addContribution(c, p.id, parseBody(e))],
+
+  ["GET", "/guestbook", () => guestbook.listEntries()],
+  ["POST", "/guestbook", (c, _p, e) => guestbook.createEntry(c, parseBody(e))],
+  ["PUT", "/guestbook/:id", (c, p, e) => guestbook.updateEntry(c, p.id, parseBody(e))],
+  ["DELETE", "/guestbook/:id", (c, p) => guestbook.deleteEntry(c, p.id)],
 
   ["GET", "/chores", () => chores.listChores()],
   ["POST", "/chores", (c, _p, e) => chores.logChore(c, parseBody(e))],
