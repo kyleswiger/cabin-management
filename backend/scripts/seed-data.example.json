@@ -46,5 +46,37 @@
     "Dish soap",
     "Batteries",
     "Propane"
+  ],
+  "treks": [
+    {
+      "name": "Ohiopyle State Park",
+      "category": "hike",
+      "description": "White water rafting, hiking, biking, swimming, natural water slides"
+    },
+    {
+      "name": "Quebec Run Wild Area",
+      "category": "hike",
+      "description": "Family Reunion Hiking Trail"
+    },
+    {
+      "name": "Fort Necessity",
+      "category": "attraction",
+      "description": "National battlefield"
+    },
+    {
+      "name": "Uniontown",
+      "category": "essentials",
+      "description": "Walmart, Home Depot, Lowe's, GameStop, vape store, etc."
+    },
+    {
+      "name": "Braddock's Inn",
+      "category": "food",
+      "description": "Restaurant and tavern"
+    },
+    {
+      "name": "Maywood Grill",
+      "category": "food",
+      "description": "Breakfast and lunch"
+    }
   ]
 }

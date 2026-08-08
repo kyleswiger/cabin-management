@@ -29,6 +29,19 @@ export interface SupplyItem {
   lastUpdatedDate: string;
 }
 
+/** Area guide entry (PRD 5.11). */
+export interface Trek {
+  id: string;
+  name: string;
+  category: "hike" | "food" | "attraction" | "essentials";
+  description: string;
+  driveMinutes?: number;
+  link?: string;
+  addedBy: string;
+  addedByName: string;
+  createdAt: string;
+}
+
 export interface Contribution {
   id: string;
   projectId: string;
