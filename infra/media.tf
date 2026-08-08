@@ -102,9 +102,15 @@ resource "aws_s3_bucket_policy" "media" {
 #     --type SecureString --value file://media_cf_private_key.pem --overwrite
 
 resource "aws_cloudfront_public_key" "media" {
-  name        = "${var.project}-media"
+  # name_prefix + create_before_destroy so key rotation can replace this key
+  # while the key group still references the old one (scripts/media-cf-keys.sh).
+  name_prefix = "${var.project}-media-"
   comment     = "Signed-cookie verification key for /media/* (PRD 5.8)"
   encoded_key = var.media_public_key_pem
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_cloudfront_key_group" "media" {
