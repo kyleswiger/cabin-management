@@ -6,6 +6,8 @@ import * as projects from "./routes/projects.js";
 import * as chores from "./routes/chores.js";
 import * as users from "./routes/users.js";
 import * as settings from "./routes/settings.js";
+import * as albums from "./routes/albums.js";
+import * as media from "./routes/media.js";
 import { getDashboard } from "./routes/dashboard.js";
 import { listNotifications } from "./routes/notifications.js";
 
@@ -39,6 +41,21 @@ const routes: Array<[string, string, RouteHandler]> = [
 
   ["GET", "/chores", () => chores.listChores()],
   ["POST", "/chores", (c, _p, e) => chores.logChore(c, parseBody(e))],
+
+  // Photo gallery (PRD 5.8) + print queue (PRD 5.9)
+  ["GET", "/albums", () => albums.listAlbums()],
+  ["POST", "/albums", (c, _p, e) => albums.createAlbum(c, parseBody(e))],
+  ["GET", "/albums/:id", (_c, p) => albums.getAlbumWithMedia(p.id)],
+  ["PUT", "/albums/:id", (c, p, e) => albums.updateAlbum(c, p.id, parseBody(e))],
+  ["DELETE", "/albums/:id", (c, p) => albums.deleteAlbum(c, p.id)],
+  ["POST", "/albums/:id/media", (c, p, e) => media.requestUpload(c, p.id, parseBody(e))],
+  ["PUT", "/media/:albumId/:id", (c, p, e) => media.updateMediaItem(c, p.albumId, p.id, parseBody(e))],
+  ["DELETE", "/media/:albumId/:id", (c, p) => media.deleteMediaItem(c, p.albumId, p.id)],
+  ["POST", "/media/:albumId/:id/print-request", (c, p) => media.requestPrint(c, p.albumId, p.id)],
+  ["DELETE", "/media/:albumId/:id/print-request", (c, p) => media.cancelPrintRequest(c, p.albumId, p.id)],
+  ["POST", "/media/:albumId/:id/printed", (c, p) => media.markPrinted(c, p.albumId, p.id)],
+  ["GET", "/print-queue", () => media.getPrintQueue()],
+  ["POST", "/media-session", () => media.createMediaSession()],
 
   ["GET", "/settings", () => settings.getSettings()],
   ["PUT", "/settings", (c, _p, e) => settings.updateSettings(c, parseBody(e))],
