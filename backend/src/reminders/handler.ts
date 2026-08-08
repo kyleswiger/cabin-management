@@ -114,10 +114,15 @@ export async function handler(): Promise<{ sent: number }> {
   if (settings.guestbookNudgeEnabled) {
     const entries = await queryType<GuestbookEntry>("GUESTBOOK");
     for (const r of reservations.filter((r) => daysBetween(r.endDate, today) === 1)) {
-      // "Already wrote one" = an entry by the same author whose inclusive visit range touches the
-      // reservation's [startDate, endDate] — so an entry dated anywhere within the stay counts.
+      // "Already wrote one" = an entry by the same author whose inclusive visit range overlaps
+      // this reservation. Same-day turnover is legal, so an entry that merely *ends* on this
+      // reservation's arrival date describes the previous trip and must not suppress this
+      // nudge — it counts only if it extends past arrival or starts on/after it.
       const alreadyWrote = entries.some(
-        (e) => e.author === r.createdBy && e.visitStart <= r.endDate && r.startDate <= e.visitEnd
+        (e) =>
+          e.author === r.createdBy &&
+          e.visitStart <= r.endDate &&
+          (e.visitEnd > r.startDate || e.visitStart >= r.startDate)
       );
       if (alreadyWrote) continue;
       const profile = profileById.get(r.createdBy);

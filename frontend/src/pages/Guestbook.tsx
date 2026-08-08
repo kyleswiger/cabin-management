@@ -44,7 +44,10 @@ export default function GuestbookPage() {
    * fall back to their next upcoming one.
    */
   const myMostRecentReservation = (): Reservation | null => {
-    const today = new Date().toISOString().slice(0, 10);
+    // Local calendar date, not UTC (same as Yardwork's todayISO): after ~7pm US
+    // Eastern toISOString() already reads as tomorrow, which would treat an
+    // upcoming reservation as started and prefill the wrong trip's dates.
+    const today = new Date().toLocaleDateString("sv-SE");
     const mine = reservations.filter((r) => r.createdBy === me.id); // API sorts by startDate ascending
     const started = mine.filter((r) => r.startDate <= today);
     return started[started.length - 1] ?? mine[0] ?? null;

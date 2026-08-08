@@ -62,7 +62,9 @@ async function save(item: Trek): Promise<void> {
   await ddb.send(
     new PutCommand({
       TableName: TABLE,
-      Item: { PK: `TREK#${item.id}`, SK: "META", GSI1PK: "TREK", GSI1SK: item.name.toLowerCase(), ...item },
+      // Spread first: index keys must come from the values being written, not be
+      // overwritten by a stale GSI1SK carried on the row this update re-read.
+      Item: { ...item, PK: `TREK#${item.id}`, SK: "META", GSI1PK: "TREK", GSI1SK: item.name.toLowerCase() },
     })
   );
 }

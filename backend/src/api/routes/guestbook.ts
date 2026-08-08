@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { ddb, GetCommand, PutCommand, DeleteCommand, TABLE, queryType } from "../../lib/db.js";
-import { ApiError, assertDate, type Caller } from "../../lib/http.js";
+import { ApiError, assertDate, todayISO, type Caller } from "../../lib/http.js";
 import { getProfile } from "../../lib/users.js";
 
 /**
@@ -41,7 +41,9 @@ async function save(entry: GuestbookEntry): Promise<void> {
   await ddb.send(
     new PutCommand({
       TableName: TABLE,
-      Item: { PK: `GUEST#${entry.id}`, SK: "META", GSI1PK: "GUESTBOOK", GSI1SK: entry.visitStart, ...entry },
+      // Spread first: index keys must come from the values being written, not be
+      // overwritten by a stale GSI1SK carried on the row this update re-read.
+      Item: { ...entry, PK: `GUEST#${entry.id}`, SK: "META", GSI1PK: "GUESTBOOK", GSI1SK: entry.visitStart },
     })
   );
 }
@@ -49,6 +51,11 @@ async function save(entry: GuestbookEntry): Promise<void> {
 function assertVisitRange(visitStart: string, visitEnd: string): void {
   // Unlike reservations (half-open, end = checkout), visit dates are inclusive: same-day is a valid one-day visit.
   if (visitEnd < visitStart) throw new ApiError(400, "visitEnd must be on or after visitStart");
+  // You can't have visited in the future, and entries sort by visitStart — a
+  // mistyped year would otherwise pin itself to the top of the logbook and the
+  // dashboard tile for years. visitEnd is left unbounded so an entry written on
+  // the last night of a stay can still carry the checkout date.
+  if (visitStart > todayISO()) throw new ApiError(400, "visitStart cannot be in the future");
 }
 
 function parseMediaIds(value: unknown): string[] {
