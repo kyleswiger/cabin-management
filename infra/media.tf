@@ -301,8 +301,11 @@ resource "aws_lambda_permission" "media_s3" {
   source_arn    = aws_s3_bucket.media.arn
 }
 
-# Uploads land under originals/ only (presigned PUT from the API); derivatives
-# under derived/ must not re-trigger processing.
+# Uploads land under originals/ (presigned PUT from the API). derived/ events are
+# how the Lambda learns of async MediaConvert completion: web.mp4 landing flips the
+# row to "ready", and poster.<seq>.jpg gets promoted to poster.jpg. The handler's
+# key routing ignores its own web.jpg/thumb.jpg/poster.jpg writes, so the .jpg
+# rule cannot recurse.
 resource "aws_s3_bucket_notification" "media" {
   bucket = aws_s3_bucket.media.id
 
@@ -310,6 +313,20 @@ resource "aws_s3_bucket_notification" "media" {
     lambda_function_arn = aws_lambda_function.media.arn
     events              = ["s3:ObjectCreated:*"]
     filter_prefix       = "originals/"
+  }
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.media.arn
+    events              = ["s3:ObjectCreated:*"]
+    filter_prefix       = "derived/"
+    filter_suffix       = ".mp4"
+  }
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.media.arn
+    events              = ["s3:ObjectCreated:*"]
+    filter_prefix       = "derived/"
+    filter_suffix       = ".jpg"
   }
 
   depends_on = [aws_lambda_permission.media_s3]

@@ -70,7 +70,7 @@ export default function PrintsPage() {
                     <div className="grow">
                       <strong>{item.caption || "Untitled photo"}</strong>
                       <div className="muted">
-                        {item.printRequestedBy ? <>Asked for by {item.printRequestedBy} · </> : null}
+                        {item.printRequestedByName ? <>Asked for by {item.printRequestedByName} · </> : null}
                         uploaded by {item.uploadedByName}
                       </div>
                     </div>

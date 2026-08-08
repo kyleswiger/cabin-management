@@ -98,6 +98,10 @@ Keys are `PK`/`SK` with `GSI1PK`/`GSI1SK` for listing:
 | Chore log | `CHORE#<id>` | `META` | `CHORE` | completedDate |
 | User profile | `USER#<sub>` | `PROFILE` | `USER` | name (lowercased) |
 | Notification | `NOTIF#<id>` | `META` | `NOTIF` | ISO timestamp |
+| Album | `ALBUM#<id>` | `META` | `ALBUM` | title (lowercased) |
+| Media item | `ALBUM#<albumId>` | `MEDIA#<id>` | `MEDIA` | createdAt |
+| Guestbook entry | `GUEST#<id>` | `META` | `GUESTBOOK` | visitStart |
+| Trek | `TREK#<id>` | `META` | `TREK` | name (lowercased) |
 | Settings | `SETTINGS` | `META` | — | — |
 
 Listing is `queryType("RESERVATION")` etc. from `lib/db.ts` (paginates GSI1). Data volume is

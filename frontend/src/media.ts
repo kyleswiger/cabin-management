@@ -41,6 +41,7 @@ export interface MediaItem {
   createdAt: string;
   printStatus: PrintStatus;
   printRequestedBy?: string;
+  printRequestedByName?: string;
   printedDate?: string;
 }
 

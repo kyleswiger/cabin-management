@@ -136,6 +136,10 @@ resource "aws_lambda_function" "api" {
       MEDIA_BUCKET               = aws_s3_bucket.media.bucket
       MEDIA_CF_KEY_PAIR_ID       = aws_cloudfront_public_key.media.id
       MEDIA_CF_PRIVATE_KEY_PARAM = aws_ssm_parameter.media_cf_private_key.name
+      # Signed-cookie policy origin. SITE_URL is intentionally empty without a custom
+      # domain (email copy depends on that), but media is always served off the
+      # distribution, so this var always has a value.
+      MEDIA_SITE_URL = local.use_custom_domain ? "https://${var.custom_domain}" : "https://${aws_cloudfront_distribution.site.domain_name}"
     })
   }
 }

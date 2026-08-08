@@ -184,10 +184,10 @@ export async function getPrintQueue(): Promise<{
 // Media session — CloudFront signed cookies (PRD 5.8 "Viewing")
 // ---------------------------------------------------------------------------
 
-/** Wired by Terraform. SITE_URL is how the backend already knows the site origin
- * (same convention as lib/email.ts); the media behavior lives on the same
- * CloudFront distribution so cookies flow. */
-const SITE_URL = process.env.SITE_URL || "";
+/** Wired by Terraform. MEDIA_SITE_URL always points at the distribution serving
+ * /media/* (custom domain when configured, else the CloudFront domain); SITE_URL
+ * is kept as a fallback but is empty on custom-domain-less deployments. */
+const SITE_URL = process.env.MEDIA_SITE_URL || process.env.SITE_URL || "";
 const CF_KEY_PAIR_ID = process.env.MEDIA_CF_KEY_PAIR_ID || "";
 const CF_PRIVATE_KEY_PARAM = process.env.MEDIA_CF_PRIVATE_KEY_PARAM || "";
 
