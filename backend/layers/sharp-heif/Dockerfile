@@ -20,7 +20,9 @@ FROM public.ecr.aws/amazonlinux/amazonlinux:2023
 ARG LIBDE265_VERSION=1.0.16
 ARG LIBHEIF_VERSION=1.19.8
 ARG LIBEXIF_VERSION=0.6.24
-ARG VIPS_VERSION=8.16.1
+# sharp pins a minimum libvips (0.35.3 → 8.18.3); keep this at what the sharp
+# version's common.h demands or the addon compile fails.
+ARG VIPS_VERSION=8.18.3
 # Keep in lockstep with the sharp devDependency in backend/package.json — the local
 # install is what typechecks the media Lambda against these same type definitions.
 ARG SHARP_VERSION=0.35.3
@@ -78,49 +80,31 @@ RUN curl -fsSL "https://github.com/libvips/libvips/releases/download/v${VIPS_VER
     /opt/bin/vips --vips-config | grep -i "heif"
 
 # --- sharp: compile the native addon against the global (/opt) libvips -------------
-# SHARP_FORCE_GLOBAL_LIBVIPS makes sharp's install skip its prebuilt libvips and
-# build from source via node-gyp (which needs node-addon-api + node-gyp present).
+# sharp ≥0.33 has NO install-time compile (npm install only fetches the @img/*
+# prebuilts) — building from source is the package's explicit `npm run build`
+# (install/build.js), which requires node-addon-api + node-gyp to be requirable
+# and honors SHARP_FORCE_GLOBAL_LIBVIPS to link the /opt libvips via pkg-config.
+# The compiled addon lands in src/build/Release/sharp-linux-x64.node; the
+# @img/sharp-* prebuilts are then deleted so require() can only resolve the
+# source build. Only sharp-* — @img also hosts pure-JS runtime deps
+# (@img/colour) that sharp needs at require() time.
 RUN mkdir -p /layer/nodejs && cd /layer/nodejs && \
     npm init -y >/dev/null && \
-    SHARP_FORCE_GLOBAL_LIBVIPS=1 npm_config_build_from_source=true \
-      npm install --foreground-scripts node-addon-api node-gyp "sharp@${SHARP_VERSION}" && \
+    npm install node-addon-api node-gyp "sharp@${SHARP_VERSION}" && \
+    cd node_modules/sharp && \
+    SHARP_FORCE_GLOBAL_LIBVIPS=1 npm run build && \
+    find src/build/Release -name 'sharp-*.node' | grep -q . && \
+    rm -rf src/build/Release/obj.target src/build/Release/.deps && \
+    cd /layer/nodejs && \
     npm uninstall node-gyp node-addon-api && \
-    rm -rf node_modules/@img node_modules/.bin
+    rm -rf node_modules/@img/sharp-* node_modules/.bin
 
-# --- collect shared libs + zip the layer -------------------------------------------
-# Ship every runtime .so the sharp addon needs that the bare Lambda runtime may not
-# provide (libvips, libheif, libde265, glib, image codecs, ...). Base glibc libs are
-# skipped; libstdc++/libgcc_s are kept deliberately — harmless if present already.
-RUN <<'COLLECT'
-set -eux
-NODE_BIN="$(find /layer/nodejs/node_modules/sharp -name 'sharp-*.node' | head -n1)"
-test -n "$NODE_BIN"
-mkdir -p /layer/lib
-ldd "$NODE_BIN" | awk '$3 ~ /^\// {print $3}' | sort -u | while read -r so; do
-  case "$(basename "$so")" in
-    ld-linux*|libc.so*|libm.so*|libpthread.so*|libdl.so*|librt.so*|libresolv.so*|libutil.so*) continue ;;
-  esac
-  cp -Ln "$so" /layer/lib/
-done
-strip --strip-unneeded /layer/lib/*.so* "$NODE_BIN" || true
-COLLECT
-
-# --- smoke test: sharp must load and report HEIC (HEVC) decode ---------------------
-# LD_LIBRARY_PATH points at the *collected* lib/ dir, proving the layer is
-# self-contained the same way it will be under /opt at runtime. The prebuilt sharp
-# also reports a "heif" format but only with fileSuffix [".avif"] — libvips includes
-# ".heic" only when libheif has an HEVC decoder, which is the whole point of this build.
-RUN <<'SMOKE'
-set -eux
-cd /layer/nodejs
-LD_LIBRARY_PATH=/layer/lib node -e "
-const sharp = require('sharp');
-console.log(sharp.versions);
-console.log('heif input:', JSON.stringify(sharp.format.heif?.input));
-if (!sharp.format.heif?.input?.fileSuffix?.includes('.heic')) {
-  throw new Error('sharp built without HEIC (HEVC) decode support');
-}
-"
-SMOKE
+# --- collect shared libs, smoke-test, zip ------------------------------------------
+# COPY'd scripts instead of RUN heredocs: the legacy Docker builder (docker without
+# BuildKit) treats heredoc RUN steps as empty commands and "succeeds" — producing a
+# layer with no lib/ and no smoke test. Scripts fail loudly on both builders.
+COPY collect-libs.sh smoke-test.sh /build/
+RUN bash /build/collect-libs.sh
+RUN bash /build/smoke-test.sh
 
 RUN cd /layer && zip -qry /layer.zip nodejs lib && unzip -l /layer.zip | tail -n 3

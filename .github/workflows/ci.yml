@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+        working-directory: backend
+      - run: npm run typecheck
+        working-directory: backend
+      - run: npm run build
+        working-directory: backend
+      - name: Verify build artifacts
+        run: ls -l backend/dist/api.zip backend/dist/reminders.zip backend/dist/media.zip
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npm run lint
+        working-directory: frontend
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Placeholder artifacts for validate
+        # validate evaluates filebase64sha256() on the Lambda/layer zips; real
+        # artifacts come from the backend build and the layer workflow.
+        run: |
+          mkdir -p backend/dist backend/layers/sharp-heif/dist
+          for z in backend/dist/api.zip backend/dist/reminders.zip backend/dist/media.zip backend/layers/sharp-heif/dist/layer.zip; do
+            echo placeholder > /tmp/placeholder && zip -qj "$z" /tmp/placeholder
+          done
+      - run: terraform fmt -check -recursive
+        working-directory: infra
+      - run: terraform init -backend=false
+        working-directory: infra
+      - run: terraform validate
+        working-directory: infra

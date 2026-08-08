@@ -24,5 +24,11 @@ cid="$(docker create --platform linux/amd64 "${IMAGE_TAG}")"
 trap 'docker rm -f "${cid}" >/dev/null 2>&1 || true' EXIT
 docker cp "${cid}:/layer.zip" dist/layer.zip
 
+# Fail loudly if the artifact is structurally wrong — a layer without libvips in
+# lib/ (e.g. skipped collect step) would deploy fine and then crash every image job.
+listing="$(unzip -l dist/layer.zip)"
+echo "$listing" | grep -q 'lib/libvips' || { echo "error: dist/layer.zip has no lib/libvips*.so — collect step did not run" >&2; exit 1; }
+echo "$listing" | grep -qE 'sharp.*\.node' || { echo "error: dist/layer.zip has no sharp native addon" >&2; exit 1; }
+
 echo "Layer artifact: $(pwd)/dist/layer.zip"
-unzip -l dist/layer.zip | awk 'NR <= 4 || /sharp\.node|\.so/ {print}' | head -n 40
+echo "$listing" | awk 'NR <= 4 || /sharp.*\.node|\.so/ {print}' | head -n 40
