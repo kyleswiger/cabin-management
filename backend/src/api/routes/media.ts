@@ -18,6 +18,21 @@ import { getAlbum, type Album, type MediaItem } from "./albums.js";
 const PHOTO_EXTS = new Set(["jpg", "jpeg", "png", "webp", "heic", "heif"]);
 const VIDEO_EXTS = new Set(["mov", "mp4", "m4v"]);
 
+/** ContentType is always derived server-side from the validated extension —
+ * never from the client. /media/* is served same-origin with the SPA, so a
+ * client-chosen text/html would be a stored XSS on the app's own origin. */
+const EXT_CONTENT_TYPES: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  heic: "image/heic",
+  heif: "image/heif",
+  mov: "video/quicktime",
+  mp4: "video/mp4",
+  m4v: "video/mp4",
+};
+
 const UPLOAD_URL_TTL_SECONDS = 15 * 60;
 
 async function getMediaItem(albumId: string, id: string): Promise<MediaItem> {
@@ -42,11 +57,10 @@ async function saveMediaItem(m: MediaItem): Promise<void> {
 export async function requestUpload(
   caller: Caller,
   albumId: string,
-  body: { fileName?: unknown; contentType?: unknown }
-): Promise<{ mediaId: string; uploadUrl: string }> {
+  body: { fileName?: unknown; contentType?: unknown } // contentType accepted but ignored — see EXT_CONTENT_TYPES
+): Promise<{ mediaId: string; uploadUrl: string; contentType: string }> {
   await getAlbum(albumId); // 404 for unknown album
   if (typeof body.fileName !== "string" || !body.fileName.trim()) throw new ApiError(400, "fileName is required");
-  if (typeof body.contentType !== "string" || !body.contentType.trim()) throw new ApiError(400, "contentType is required");
   if (!MEDIA_BUCKET) throw new ApiError(500, "Media storage is not configured for this deployment");
 
   const ext = body.fileName.split(".").pop()?.toLowerCase() ?? "";
@@ -71,12 +85,14 @@ export async function requestUpload(
   };
   await saveMediaItem(m);
 
+  const contentType = EXT_CONTENT_TYPES[ext];
   const uploadUrl = await getSignedUrl(
     s3,
-    new PutObjectCommand({ Bucket: MEDIA_BUCKET, Key: m.originalKey, ContentType: body.contentType }),
+    new PutObjectCommand({ Bucket: MEDIA_BUCKET, Key: m.originalKey, ContentType: contentType }),
     { expiresIn: UPLOAD_URL_TTL_SECONDS }
   );
-  return { mediaId: id, uploadUrl };
+  // The browser must PUT with this exact Content-Type — it's part of the signature.
+  return { mediaId: id, uploadUrl, contentType };
 }
 
 /** PUT /media/:albumId/:id — caption/taken-date metadata; uploader-or-admin (PRD 5.8). */

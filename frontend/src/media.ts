@@ -45,8 +45,8 @@ export interface MediaItem {
   printedDate?: string;
 }
 
-export interface AlbumDetail {
-  album: Album;
+/** GET /albums/:id — album fields flattened at the top level plus its items. */
+export interface AlbumDetail extends Album {
   /** Newest first per contract. */
   items: MediaItem[];
 }
@@ -59,6 +59,9 @@ export interface PrintQueue {
 export interface PresignedUpload {
   mediaId: string;
   uploadUrl: string;
+  /** Server-derived from the file extension; the S3 PUT must use exactly this
+   * value — it's covered by the presigned signature. */
+  contentType: string;
 }
 
 export const mediaApi = {
@@ -70,6 +73,7 @@ export const mediaApi = {
   /** Presigned S3 PUT for the untouched original (PRD 5.8 upload mechanics). */
   presignUpload: (albumId: string, body: { fileName: string; contentType: string }) =>
     api.post<PresignedUpload>(`/albums/${albumId}/media`, body),
+  /** takenDate: "" clears the stored date; omitting the key leaves it untouched. */
   updateMedia: (albumId: string, id: string, body: { caption?: string; takenDate?: string }) =>
     api.put(`/media/${albumId}/${id}`, body),
   /** Uploader-or-admin (PRD 5.8 metadata rules). */

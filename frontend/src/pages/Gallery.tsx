@@ -214,10 +214,9 @@ function AlbumDetailView({ albumId }: { albumId: string }) {
         const rowId = `u${uploadSeq.current++}`;
         setUploads((rows) => [...rows, { id: rowId, name: file.name, percent: 0 }]);
         try {
-          const contentType = fileContentType(file);
-          const { uploadUrl } = await mediaApi.presignUpload(albumId, {
+          const { uploadUrl, contentType } = await mediaApi.presignUpload(albumId, {
             fileName: file.name,
-            contentType,
+            contentType: fileContentType(file),
           });
           await uploadToS3(uploadUrl, file, contentType, (percent) => patchUpload(rowId, { percent }));
           setUploads((rows) => rows.filter((r) => r.id !== rowId));
@@ -236,7 +235,7 @@ function AlbumDetailView({ albumId }: { albumId: string }) {
 
   const selected = selectedId ? items.find((i) => i.id === selectedId) ?? null : null;
   const readyItems = items.filter((i) => i.processingStatus === "ready");
-  const newestReadyId = data?.album.type === "reference" ? readyItems[0]?.id : undefined;
+  const newestReadyId = data?.type === "reference" ? readyItems[0]?.id : undefined;
 
   return (
     <>
@@ -244,10 +243,10 @@ function AlbumDetailView({ albumId }: { albumId: string }) {
         <Link to="/gallery" className="muted">← All albums</Link>
       </p>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-        <h1 style={{ margin: "0.25rem 0 0.75rem" }}>{data ? data.album.title : "Album"}</h1>
+        <h1 style={{ margin: "0.25rem 0 0.75rem" }}>{data ? data.title : "Album"}</h1>
         <button className="btn" onClick={() => fileInput.current?.click()}>+ Add photos &amp; videos</button>
       </div>
-      {data?.album.type === "reference" && (
+      {data?.type === "reference" && (
         <p className="muted">
           Reference album — upload a new photo whenever things change; the newest one is treated as the current state.
         </p>
@@ -442,10 +441,8 @@ function Lightbox({
                 disabled={busy}
                 onClick={() =>
                   void run(() =>
-                    mediaApi.updateMedia(item.albumId, item.id, {
-                      caption,
-                      ...(takenDate ? { takenDate } : {}),
-                    }),
+                    // takenDate sent unconditionally — "" is the backend's "clear it" signal.
+                    mediaApi.updateMedia(item.albumId, item.id, { caption, takenDate }),
                   )
                 }
               >
