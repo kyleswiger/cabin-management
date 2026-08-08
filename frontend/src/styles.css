@@ -99,6 +99,12 @@ input, select, textarea {
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--moss); outline-offset: 0; border-color: var(--moss); }
 label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.25rem; }
 .field { margin-bottom: 0.85rem; }
+/* Checkbox and its text read as one control: box pinned top-left, copy wrapping beside it.
+   Without this the global `input { width: 100% }` above centres the box on its own line, leaving it
+   ambiguous which text a given box belongs to. That ambiguity matters for the SMS consent
+   disclosure specifically — the pairing of box and disclosure *is* the opt-in evidence. */
+label.check { display: flex; align-items: flex-start; gap: 0.5rem; line-height: 1.45; }
+label.check input[type="checkbox"] { width: auto; flex: 0 0 auto; margin-top: 0.18rem; }
 .row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
 .row > * { flex: 1; min-width: 140px; }
 
