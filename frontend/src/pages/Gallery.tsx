@@ -298,7 +298,10 @@ function AlbumDetailView({ albumId }: { albumId: string }) {
     // `required` stops an empty input but not a whitespace-only one, which the API
     // rejects with a 400 — no reason to make the round trip to learn that.
     const title = renameTitle.trim();
-    if (!title) return;
+    if (!title) {
+      setError("Album title can't be blank");
+      return;
+    }
     setAlbumBusy(true);
     setError("");
     try {
@@ -353,7 +356,13 @@ function AlbumDetailView({ albumId }: { albumId: string }) {
           <form onSubmit={submitRename}>
             <div className="field">
               <label>Album title</label>
-              <input value={renameTitle} onChange={(e) => setRenameTitle(e.target.value)} required autoFocus />
+              <input
+                value={renameTitle}
+                onChange={(e) => setRenameTitle(e.target.value)}
+                onKeyDown={(e) => e.key === "Escape" && setRenaming(false)}
+                required
+                autoFocus
+              />
             </div>
             <div style={{ display: "flex", gap: "0.5rem" }}>
               <button className="btn small" disabled={albumBusy}>Save title</button>
