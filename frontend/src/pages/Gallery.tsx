@@ -295,10 +295,14 @@ function AlbumDetailView({ albumId }: { albumId: string }) {
 
   const submitRename = async (e: FormEvent) => {
     e.preventDefault();
+    // `required` stops an empty input but not a whitespace-only one, which the API
+    // rejects with a 400 — no reason to make the round trip to learn that.
+    const title = renameTitle.trim();
+    if (!title) return;
     setAlbumBusy(true);
     setError("");
     try {
-      await mediaApi.updateAlbum(albumId, { title: renameTitle.trim() });
+      await mediaApi.updateAlbum(albumId, { title });
       setRenaming(false);
       await load();
     } catch (err) {
