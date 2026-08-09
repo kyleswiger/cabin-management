@@ -55,7 +55,12 @@ async function saveAlbum(a: Album): Promise<void> {
   await ddb.send(
     new PutCommand({
       TableName: TABLE,
-      Item: { PK: `ALBUM#${a.id}`, SK: "META", GSI1PK: "ALBUM", GSI1SK: a.title.toLowerCase(), ...a },
+      // Spread first: index keys must come from the values being written, not be
+      // overwritten by a stale GSI1SK carried on the row this update re-read.
+      // updateAlbum() re-reads the row via getAlbum(), which returns the raw
+      // DynamoDB item — GSI1SK included — so spreading last pinned a renamed
+      // album's sort key to its OLD title and left the gallery list mis-ordered.
+      Item: { ...a, PK: `ALBUM#${a.id}`, SK: "META", GSI1PK: "ALBUM", GSI1SK: a.title.toLowerCase() },
     })
   );
 }
@@ -64,15 +69,21 @@ async function saveAlbum(a: Album): Promise<void> {
  * thumbnail). Whole-type fetch + in-memory grouping, per the repo's scale rules. */
 export async function listAlbums(): Promise<Array<Album & { itemCount: number; coverThumbKey: string | null }>> {
   const [albums, media] = await Promise.all([queryType<Album>("ALBUM"), queryType<MediaItem>("MEDIA")]);
-  return albums.map((a) => {
-    const items = media.filter((m) => m.albumId === a.id);
-    // Videos never get a thumbKey — fall back to the poster frame, or a
-    // video-only album would show no cover at all.
-    const cover = items
-      .filter((m) => m.processingStatus === "ready" && (m.thumbKey || m.posterKey))
-      .sort((x, y) => y.createdAt.localeCompare(x.createdAt))[0];
-    return { ...a, itemCount: items.length, coverThumbKey: cover?.thumbKey ?? cover?.posterKey ?? null };
-  });
+  // Sort here rather than leaning on GSI1SK order, the way listTreks/listEntries do.
+  // Rows written before the saveAlbum() spread-order fix carry a GSI1SK pinned to the
+  // album's pre-rename title, and nothing rewrites them until the album is next saved —
+  // sorting on the live title repairs the display order without a migration.
+  return [...albums]
+    .sort((x, y) => x.title.localeCompare(y.title))
+    .map((a) => {
+      const items = media.filter((m) => m.albumId === a.id);
+      // Videos never get a thumbKey — fall back to the poster frame, or a
+      // video-only album would show no cover at all.
+      const cover = items
+        .filter((m) => m.processingStatus === "ready" && (m.thumbKey || m.posterKey))
+        .sort((x, y) => y.createdAt.localeCompare(x.createdAt))[0];
+      return { ...a, itemCount: items.length, coverThumbKey: cover?.thumbKey ?? cover?.posterKey ?? null };
+    });
 }
 
 /** GET /albums/:id — the album plus its media, newest first (PRD 5.8: newest
