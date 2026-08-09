@@ -11,7 +11,7 @@ import MediaThumb from "../components/MediaThumb";
  * the record of what's already in the physical album.
  */
 export default function PrintsPage() {
-  const { isAdmin } = useAuth();
+  const { me, isAdmin } = useAuth();
   const [queue, setQueue] = useState<PrintQueue | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -76,22 +76,26 @@ export default function PrintsPage() {
                     </div>
                     {/* Marking printed is admin-only (PRD 5.9 — printer-owner workflow). */}
                     {isAdmin && (
-                      <>
-                        <button
-                          className="btn small"
-                          disabled={busy}
-                          onClick={() => void run(() => mediaApi.markPrinted(item.albumId, item.id))}
-                        >
-                          Mark printed
-                        </button>
-                        <button
-                          className="btn small secondary"
-                          disabled={busy}
-                          onClick={() => void run(() => mediaApi.cancelPrintRequest(item.albumId, item.id))}
-                        >
-                          Remove
-                        </button>
-                      </>
+                      <button
+                        className="btn small"
+                        disabled={busy}
+                        onClick={() => void run(() => mediaApi.markPrinted(item.albumId, item.id))}
+                      >
+                        Mark printed
+                      </button>
+                    )}
+                    {/* Withdrawing a request is requester-or-admin per the API and PRD 5.9
+                        ("any member can flag" implies they can unflag). Gating this on isAdmin
+                        alone stranded a member's own request here — they had to go find the
+                        photo in the gallery lightbox to take it back. */}
+                    {(isAdmin || item.printRequestedBy === me.id) && (
+                      <button
+                        className="btn small secondary"
+                        disabled={busy}
+                        onClick={() => void run(() => mediaApi.cancelPrintRequest(item.albumId, item.id))}
+                      >
+                        Remove
+                      </button>
                     )}
                   </div>
                 ))}
