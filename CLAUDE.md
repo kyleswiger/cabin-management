@@ -14,7 +14,8 @@ business rules; code comments reference its section numbers (e.g. "PRD 5.2").
 ```bash
 # Backend (TypeScript Lambdas)
 cd backend && npm run typecheck        # tsc --noEmit — the only backend check; there are no unit tests
-cd backend && npm run build            # esbuild → dist/api.zip + dist/reminders.zip (Terraform reads these)
+cd backend && npm run build            # esbuild → dist/api.zip + dist/reminders.zip + dist/media.zip (Terraform reads these)
+backend/layers/sharp-heif/build.sh     # Docker build of the sharp/libvips+libheif layer → dist/layer.zip (required before deploy)
 
 # Frontend
 cd frontend && npm run dev             # Vite dev server on :5173 (allowed by the API's CORS config)
@@ -53,8 +54,12 @@ Keep it that way. Every entity a spec creates must carry the `MARKER` (`[e2e]`) 
 **Frontend** (React 19 + Vite SPA on S3/CloudFront) → **API Gateway HTTP API** (JWT authorizer,
 Cognito) → **one Lambda** (`backend/src/api/handler.ts`) → **one DynamoDB table**.
 A second Lambda (`backend/src/reminders/handler.ts`) runs daily on EventBridge Scheduler and
-sends SMS via SNS. Terraform in `infra/` owns the entire stack; nothing is shared between
-deployments.
+sends SMS via SNS. A third Lambda (`backend/src/media/handler.ts`, PRD 5.8) fires on S3 upload
+events from the private media bucket: it writes photo derivatives with sharp (custom
+libvips+libheif layer — `backend/layers/sharp-heif/`) and submits MediaConvert jobs for
+non-web-playable video; media is served through a `/media/*` CloudFront behavior gated by
+signed cookies (`POST /media-session`, key managed by `scripts/media-cf-keys.sh`). Terraform
+in `infra/` owns the entire stack; nothing is shared between deployments.
 
 ### The profile directory is the only place deployment-specific values live
 
@@ -98,6 +103,10 @@ Keys are `PK`/`SK` with `GSI1PK`/`GSI1SK` for listing:
 | Chore log | `CHORE#<id>` | `META` | `CHORE` | completedDate |
 | User profile | `USER#<sub>` | `PROFILE` | `USER` | name (lowercased) |
 | Notification | `NOTIF#<id>` | `META` | `NOTIF` | ISO timestamp |
+| Album | `ALBUM#<id>` | `META` | `ALBUM` | title (lowercased) |
+| Media item | `ALBUM#<albumId>` | `MEDIA#<id>` | `MEDIA` | createdAt |
+| Guestbook entry | `GUEST#<id>` | `META` | `GUESTBOOK` | visitStart |
+| Trek | `TREK#<id>` | `META` | `TREK` | name (lowercased) |
 | Settings | `SETTINGS` | `META` | — | — |
 
 Listing is `queryType("RESERVATION")` etc. from `lib/db.ts` (paginates GSI1). Data volume is
@@ -142,6 +151,9 @@ Frontend session handling is in `src/auth.ts` (amazon-cognito-identity-js, refre
 ## Operator scripts
 
 Run from the repo root with `TABLE_NAME` / `USER_POOL_ID` from `terraform output`:
-`backend/scripts/seed.mjs` (idempotent backlog + supplies), `create-user.mjs` (first admin,
-emails a temp password), `create-test-user.mjs` (permanent-password e2e account),
+`backend/scripts/seed.mjs` (idempotent backlog + supplies + treks), `create-user.mjs` (first
+admin, emails a temp password), `create-test-user.mjs` (permanent-password e2e account),
 `migrate-priority-settings.mjs` (one-time rename of the old `mom*` settings keys).
+`scripts/media-cf-keys.sh` (not part of deploy.sh) generates/rotates the CloudFront
+signed-cookie keypair and pushes the private key to SSM — see its header for the
+generate → deploy → push rotation sequence.

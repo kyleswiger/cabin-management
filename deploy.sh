@@ -65,6 +65,26 @@ else
 fi
 echo "==> State: $STATE_MODE"
 
+# The media pipeline (PRD 5.8) needs a CloudFront signing keypair. It is required
+# by Terraform and deployment-specific, so generate it on first deploy rather than
+# failing the apply — the private half stays in the profile dir and goes to SSM below.
+if ! grep -q '^[[:space:]]*media_public_key_pem[[:space:]]*=' "$TFVARS" ||
+   grep -q 'REPLACE with the contents of' "$TFVARS"; then
+  echo "==> No CloudFront media signing key in this profile — generating one"
+  "$REPO/scripts/media-cf-keys.sh" generate --profile "$PROFILE"
+  MEDIA_KEY_IS_NEW=1
+fi
+
+# Terraform reads this artifact directly; a missing layer fails mid-apply with an
+# opaque expression error, so check it here where the fix is obvious.
+LAYER_ZIP="$REPO/backend/layers/sharp-heif/dist/layer.zip"
+if [ ! -s "$LAYER_ZIP" ]; then
+  echo "ERROR: missing $LAYER_ZIP" >&2
+  echo "Build it with Docker:  backend/layers/sharp-heif/build.sh" >&2
+  echo "Or download the CI-built artifact (see .github/workflows/layer-build.yml)." >&2
+  exit 1
+fi
+
 echo "==> Building backend Lambda bundles"
 # `npm ci` before every build, not just on a fresh checkout. A profile repo pins this repo as a
 # submodule, so bumping the pin swaps in a new package.json while leaving the old node_modules in
@@ -90,6 +110,14 @@ CLIENT_ID=$(tf_out user_pool_client_id)
 BUCKET=$(tf_out site_bucket)
 DIST_ID=$(tf_out cloudfront_distribution_id)
 SITE_URL=$(tf_out site_url)
+
+# The SSM parameter is created with a placeholder value that Terraform then
+# ignores, so the real signing key has to be pushed out-of-band after the apply.
+if [ -n "${MEDIA_KEY_IS_NEW:-}" ]; then
+  echo "==> Publishing the media signing key to SSM"
+  "$REPO/scripts/media-cf-keys.sh" push --profile "$PROFILE" \
+    --param "$(tf_out media_cf_private_key_param)"
+fi
 
 echo "==> Building frontend"
 cat > frontend/.env.production <<EOF

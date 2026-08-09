@@ -74,6 +74,26 @@ data "aws_iam_policy_document" "lambda_permissions" {
     }
   }
 
+  # Media pipeline (PRD 5.8): the API presigns PUTs for originals and deletes
+  # original + derivatives on media delete. Shared with the reminders Lambda
+  # (same role, matching the existing pattern here).
+  statement {
+    sid = "MediaBucket"
+    actions = [
+      "s3:PutObject",
+      "s3:GetObject",
+      "s3:DeleteObject",
+    ]
+    resources = ["${aws_s3_bucket.media.arn}/*"]
+  }
+
+  # Signed-cookie private key, set out-of-band by the operator (see media.tf).
+  statement {
+    sid       = "MediaSigningKey"
+    actions   = ["ssm:GetParameter"]
+    resources = [aws_ssm_parameter.media_cf_private_key.arn]
+  }
+
   statement {
     sid = "CognitoAdmin"
     actions = [
@@ -111,6 +131,15 @@ resource "aws_lambda_function" "api" {
       # Empty without a custom domain — sendEmail() treats that as "no verified sender" and
       # skips rather than erroring per recipient.
       NOTIFICATION_FROM_ADDRESS = local.use_custom_domain ? "no-reply@${var.custom_domain}" : ""
+      # Media pipeline (PRD 5.8): presigned uploads + CloudFront signed cookies.
+      # The private key itself is only in SSM, never in Terraform (see media.tf).
+      MEDIA_BUCKET               = aws_s3_bucket.media.bucket
+      MEDIA_CF_KEY_PAIR_ID       = aws_cloudfront_public_key.media.id
+      MEDIA_CF_PRIVATE_KEY_PARAM = aws_ssm_parameter.media_cf_private_key.name
+      # Signed-cookie policy origin. SITE_URL is intentionally empty without a custom
+      # domain (email copy depends on that), but media is always served off the
+      # distribution, so this var always has a value.
+      MEDIA_SITE_URL = local.use_custom_domain ? "https://${var.custom_domain}" : "https://${aws_cloudfront_distribution.site.domain_name}"
     })
   }
 }

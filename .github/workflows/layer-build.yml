@@ -1,0 +1,41 @@
+name: sharp-heif-layer
+
+# Builds the sharp/libvips+libheif Lambda layer in the cloud so deploys never
+# depend on a workstation Docker setup. The zip is published as a workflow
+# artifact; fetch the latest with:
+#
+#   gh run download --repo kyleswiger/cabin-management \
+#     -n sharp-heif-layer -D backend/layers/sharp-heif/dist \
+#     "$(gh run list --repo kyleswiger/cabin-management -w sharp-heif-layer \
+#        -b main --status success -L 1 --json databaseId -q '.[0].databaseId')"
+#
+# build.sh already fails the run if the zip lacks the sharp addon or libvips,
+# and the in-image smoke test asserts HEIC (HEVC) decode works.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "backend/layers/sharp-heif/**"
+      - ".github/workflows/layer-build.yml"
+  push:
+    branches: [main]
+    paths:
+      - "backend/layers/sharp-heif/**"
+      - ".github/workflows/layer-build.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build layer
+        run: ./build.sh
+        working-directory: backend/layers/sharp-heif
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sharp-heif-layer
+          path: backend/layers/sharp-heif/dist/layer.zip
+          retention-days: 90
+          if-no-files-found: error

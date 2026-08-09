@@ -19,6 +19,13 @@ resource "aws_cloudfront_origin_access_control" "site" {
   signing_protocol                  = "sigv4"
 }
 
+resource "aws_cloudfront_origin_access_control" "media" {
+  name                              = "${var.project}-media"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
 # Managed cache policy: CachingOptimized
 data "aws_cloudfront_cache_policy" "caching_optimized" {
   name = "Managed-CachingOptimized"
@@ -34,6 +41,35 @@ resource "aws_cloudfront_distribution" "site" {
     domain_name              = aws_s3_bucket.site.bucket_regional_domain_name
     origin_id                = "s3-site"
     origin_access_control_id = aws_cloudfront_origin_access_control.site.id
+  }
+
+  # Private media bucket (PRD 5.8); resources in media.tf.
+  origin {
+    domain_name              = aws_s3_bucket.media.bucket_regional_domain_name
+    origin_id                = "s3-media"
+    origin_access_control_id = aws_cloudfront_origin_access_control.media.id
+  }
+
+  # PRD 5.8: /media/* on the same distribution as the SPA (so signed cookies
+  # flow), gated by the trusted key group; the viewer-request function strips
+  # the /media prefix so /media/<key> fetches s3://media-bucket/<key> — see
+  # media.tf for why origin_path can't do that.
+  # Known tradeoff: the SPA custom_error_response below is distribution-wide,
+  # so an unauthorized /media/* request (CloudFront 403) returns the app shell
+  # with a 200 instead of a bare 403 — cosmetic only, no object bytes leak.
+  ordered_cache_behavior {
+    path_pattern           = "/media/*"
+    target_origin_id       = "s3-media"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    cache_policy_id        = data.aws_cloudfront_cache_policy.caching_optimized.id
+    trusted_key_groups     = [aws_cloudfront_key_group.media.id]
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.media_uri_rewrite.arn
+    }
   }
 
   default_cache_behavior {
