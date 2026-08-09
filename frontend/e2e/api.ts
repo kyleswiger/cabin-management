@@ -43,6 +43,9 @@ interface Project { id: string; title: string }
 interface Chore { id: string; note: string }
 interface Settings { priorityWindowDays: number; priorityUserId: string | null; notifyOnProjectUpdates: boolean }
 interface Profile { id: string }
+interface Album { id: string; title: string }
+interface GuestbookEntry { id: string; title: string }
+interface Trek { id: string; name: string }
 
 // Written by globalSetup, read by globalTeardown. Same gitignored dir as the auth state.
 const SETTINGS_STATE_FILE = "e2e/.auth/settings-state.json";
@@ -123,8 +126,30 @@ export async function findOpenSlot(): Promise<{ startDate: string; endDate: stri
 }
 
 /**
+ * Delete a marked album by exact title, cascading to its media (PRD 5.8).
+ *
+ * The gallery spec's own cleanup path. Album delete is admin-only and, on a deployment
+ * that predates the Gallery page's "Delete album" button, has no UI at all — so the spec
+ * cannot always undo through the browser what it did through the browser. Resolves to
+ * false when no such album exists (already cleaned up), so it is safe to call twice.
+ */
+export async function deleteAlbumByTitle(title: string): Promise<boolean> {
+  const album = (await apiCall<Album[]>("GET", "/albums")).find((a) => a.title === title);
+  if (!album) return false;
+  await apiCall("DELETE", `/albums/${album.id}`);
+  return true;
+}
+
+/** Same idea for guestbook entries — used when a spec creates one it can't reach a delete button for. */
+export async function deleteGuestbookEntryByTitle(title: string): Promise<boolean> {
+  const entry = (await apiCall<GuestbookEntry[]>("GET", "/guestbook")).find((g) => g.title === title);
+  if (!entry) return false;
+  await apiCall("DELETE", `/guestbook/${entry.id}`);
+  return true;
+}
+
+/**
  * Delete every entity the suite may have left behind (identified by the MARKER prefix).
- * Chore logs have no delete endpoint, so any marked ones are reported but not removed.
  */
 export async function sweepTestData(): Promise<string> {
   const isMarked = (s?: string) => (s ?? "").includes(MARKER);
@@ -148,9 +173,44 @@ export async function sweepTestData(): Promise<string> {
       removed++;
     }
   }
+  // Guestbook entries and treks (PRD 5.10 / 5.11) — plain creator-or-admin deletes.
+  for (const g of await apiCall<GuestbookEntry[]>("GET", "/guestbook")) {
+    if (isMarked(g.title)) {
+      await apiCall("DELETE", `/guestbook/${g.id}`);
+      removed++;
+    }
+  }
+  for (const t of await apiCall<Trek[]>("GET", "/treks")) {
+    if (isMarked(t.name)) {
+      await apiCall("DELETE", `/treks/${t.id}`);
+      removed++;
+    }
+  }
+  // Albums last: DELETE /albums/:id cascades to every media item in the album (rows +
+  // S3 originals and derivatives), so this also clears any marked photo the gallery
+  // spec uploaded — including ones sitting in the print queue, which have no
+  // standalone sweep of their own.
+  for (const a of await apiCall<Album[]>("GET", "/albums")) {
+    if (isMarked(a.title)) {
+      await apiCall("DELETE", `/albums/${a.id}`);
+      removed++;
+    }
+  }
+
+  // DELETE /chores/:id is newer than some deployed stacks. Against a deployment that predates
+  // it the call 404s; report the leftovers instead of failing teardown over them.
   const markedChores = (await apiCall<Chore[]>("GET", "/chores")).filter((c) => isMarked(c.note));
-  const choreNote = markedChores.length
-    ? ` ${markedChores.length} marked chore log(s) remain (no delete endpoint) — harmless test rows.`
+  let staleChores = 0;
+  for (const c of markedChores) {
+    try {
+      await apiCall("DELETE", `/chores/${c.id}`);
+      removed++;
+    } catch {
+      staleChores++;
+    }
+  }
+  const choreNote = staleChores
+    ? ` ${staleChores} marked chore log(s) remain — deployment predates DELETE /chores/:id.`
     : "";
 
   return `Swept ${removed} marked entit${removed === 1 ? "y" : "ies"}.${choreNote}`;

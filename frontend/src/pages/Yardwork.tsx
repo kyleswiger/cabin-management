@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
+import { useAuth } from "../App";
 import type { ChoreLog, Settings } from "../types";
 
 const todayISO = () => new Date().toLocaleDateString("sv-SE");
 
 export default function YardworkPage() {
+  const { me, isAdmin } = useAuth();
   const [chores, setChores] = useState<ChoreLog[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [form, setForm] = useState({ type: "mow", completedDate: todayISO(), note: "" });
@@ -39,6 +41,18 @@ export default function YardworkPage() {
       setError((err as Error).message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  // A mis-logged mow resets the reminder clock, so the person who logged it (or an admin)
+  // needs a way to take it back.
+  const remove = async (c: ChoreLog) => {
+    if (!window.confirm(`Remove the ${c.type} logged on ${c.completedDate}?`)) return;
+    try {
+      await api.del(`/chores/${c.id}`);
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
     }
   };
 
@@ -91,6 +105,9 @@ export default function YardworkPage() {
               <strong>{c.type}</strong> · {c.completedDate} · {c.completedByName}
               {c.note && <span className="muted"> — {c.note}</span>}
             </div>
+            {(isAdmin || c.completedBy === me.id) && (
+              <button className="btn danger small" onClick={() => void remove(c)}>✕</button>
+            )}
           </div>
         ))}
       </div>

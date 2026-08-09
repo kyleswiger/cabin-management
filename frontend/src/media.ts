@@ -75,6 +75,10 @@ export const mediaApi = {
   createAlbum: (body: { type: AlbumType; title: string; slug?: string }) =>
     api.post<Album>("/albums", body),
   getAlbum: (albumId: string) => api.get<AlbumDetail>(`/albums/${albumId}`),
+  /** Rename — creator-or-admin (PRD 5.8). */
+  updateAlbum: (albumId: string, body: { title: string }) => api.put<Album>(`/albums/${albumId}`, body),
+  /** Admin only. Cascades: every media item's row and its S3 objects go too (PRD 5.8). */
+  deleteAlbum: (albumId: string) => api.del(`/albums/${albumId}`),
   /** Presigned S3 PUT for the untouched original (PRD 5.8 upload mechanics). */
   presignUpload: (albumId: string, body: { fileName: string; contentType: string }) =>
     api.post<PresignedUpload>(`/albums/${albumId}/media`, body),

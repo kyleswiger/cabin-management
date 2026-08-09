@@ -203,10 +203,14 @@ const POLL_MAX_MS = 30 * 60_000;
 
 function AlbumDetailView({ albumId }: { albumId: string }) {
   const navigate = useNavigate();
+  const { me, isAdmin } = useAuth();
   const [data, setData] = useState<AlbumDetail | null>(null);
   const [error, setError] = useState("");
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [renameTitle, setRenameTitle] = useState("");
+  const [albumBusy, setAlbumBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadSeq = useRef(0);
 
@@ -277,6 +281,56 @@ function AlbumDetailView({ albumId }: { albumId: string }) {
   const readyItems = items.filter((i) => i.processingStatus === "ready");
   const newestReadyId = data?.type === "reference" ? readyItems[0]?.id : undefined;
 
+  // PUT/DELETE /albums/:id exist on the API but had no UI, so a mistyped album title
+  // was permanent and a retired trip album could only be removed out of band.
+  // Rename is creator-or-admin and delete is admin-only — mirror the API's rules so
+  // the buttons aren't offered where they'd 403.
+  const canRename = isAdmin || data?.createdBy === me.id;
+
+  const startRename = () => {
+    setRenameTitle(data?.title ?? "");
+    setError("");
+    setRenaming(true);
+  };
+
+  const submitRename = async (e: FormEvent) => {
+    e.preventDefault();
+    // `required` stops an empty input but not a whitespace-only one, which the API
+    // rejects with a 400 — no reason to make the round trip to learn that.
+    const title = renameTitle.trim();
+    if (!title) {
+      setError("Album title can't be blank");
+      return;
+    }
+    setAlbumBusy(true);
+    setError("");
+    try {
+      await mediaApi.updateAlbum(albumId, { title });
+      setRenaming(false);
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setAlbumBusy(false);
+    }
+  };
+
+  const removeAlbum = async () => {
+    // Spelled out because the cascade is irreversible: the album's originals go too.
+    const count = items.length;
+    const what = count === 0 ? "This album is empty." : `All ${count} item${count === 1 ? "" : "s"} in it, originals included, are deleted for good.`;
+    if (!window.confirm(`Delete the album "${data?.title ?? ""}"? ${what}`)) return;
+    setAlbumBusy(true);
+    setError("");
+    try {
+      await mediaApi.deleteAlbum(albumId);
+      navigate("/gallery");
+    } catch (err) {
+      setError((err as Error).message);
+      setAlbumBusy(false);
+    }
+  };
+
   return (
     <>
       <p style={{ margin: "0.25rem 0" }}>
@@ -284,8 +338,39 @@ function AlbumDetailView({ albumId }: { albumId: string }) {
       </p>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
         <h1 style={{ margin: "0.25rem 0 0.75rem" }}>{data ? data.title : "Album"}</h1>
-        <button className="btn" onClick={() => fileInput.current?.click()}>+ Add photos &amp; videos</button>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+          {data && canRename && !renaming && (
+            <button className="btn small secondary" onClick={startRename}>Rename</button>
+          )}
+          {data && isAdmin && (
+            <button className="btn danger small" disabled={albumBusy} onClick={() => void removeAlbum()}>
+              Delete album
+            </button>
+          )}
+          <button className="btn" onClick={() => fileInput.current?.click()}>+ Add photos &amp; videos</button>
+        </div>
       </div>
+
+      {renaming && (
+        <div className="card" style={{ marginBottom: "1rem" }}>
+          <form onSubmit={submitRename}>
+            <div className="field">
+              <label>Album title</label>
+              <input
+                value={renameTitle}
+                onChange={(e) => setRenameTitle(e.target.value)}
+                onKeyDown={(e) => e.key === "Escape" && setRenaming(false)}
+                required
+                autoFocus
+              />
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button className="btn small" disabled={albumBusy}>Save title</button>
+              <button type="button" className="btn small secondary" onClick={() => setRenaming(false)}>Cancel</button>
+            </div>
+          </form>
+        </div>
+      )}
       {data?.type === "reference" && (
         <p className="muted">
           Reference album — upload a new photo whenever things change; the newest one is treated as the current state.
@@ -384,7 +469,7 @@ function AlbumDetailView({ albumId }: { albumId: string }) {
         />
       )}
 
-      {/* Deleting the album itself isn't in scope; back out gracefully if it vanished. */}
+      {/* Back out gracefully if the album vanished (deleted in another tab). */}
       {error && !data && (
         <p><button className="linkbtn" onClick={() => navigate("/gallery")}>Back to the gallery</button></p>
       )}

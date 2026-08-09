@@ -53,6 +53,7 @@ const routes: Array<[string, string, RouteHandler]> = [
 
   ["GET", "/chores", () => chores.listChores()],
   ["POST", "/chores", (c, _p, e) => chores.logChore(c, parseBody(e))],
+  ["DELETE", "/chores/:id", (c, p) => chores.deleteChore(c, p.id)],
 
   // Photo gallery (PRD 5.8) + print queue (PRD 5.9)
   ["GET", "/albums", () => albums.listAlbums()],

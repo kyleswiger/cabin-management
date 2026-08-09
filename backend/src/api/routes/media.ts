@@ -45,7 +45,11 @@ async function saveMediaItem(m: MediaItem): Promise<void> {
   await ddb.send(
     new PutCommand({
       TableName: TABLE,
-      Item: { PK: `ALBUM#${m.albumId}`, SK: `MEDIA#${m.id}`, GSI1PK: "MEDIA", GSI1SK: m.createdAt, ...m },
+      // Spread first, as in albums/guestbook/treks: every caller except
+      // requestUpload() re-reads the row with getMediaItem(), which hands back the
+      // raw DynamoDB item — PK/SK/GSI1PK/GSI1SK included. Spreading last let those
+      // stale copies win over the freshly computed keys.
+      Item: { ...m, PK: `ALBUM#${m.albumId}`, SK: `MEDIA#${m.id}`, GSI1PK: "MEDIA", GSI1SK: m.createdAt },
     })
   );
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { ddb, PutCommand, TABLE, queryType } from "../../lib/db.js";
+import { ddb, GetCommand, PutCommand, DeleteCommand, TABLE, queryType } from "../../lib/db.js";
 import { ApiError, assertDate, todayISO, type Caller } from "../../lib/http.js";
 import { getProfile } from "../../lib/users.js";
 
@@ -39,4 +39,22 @@ export async function logChore(caller: Caller, body: { type?: unknown; note?: un
     })
   );
   return log;
+}
+
+/**
+ * Remove a mis-logged chore. Creator-or-admin, matching treks/guestbook.
+ *
+ * This is not just tidiness: the reminder logic keys off the most recent `mow` row
+ * (PRD 5.2 — the arrival-day backstop fires when the last mow is older than
+ * `vacancyThresholdDays`), so a chore logged by mistake silently suppresses the
+ * reminder with no way to undo it.
+ */
+export async function deleteChore(caller: Caller, id: string): Promise<void> {
+  const res = await ddb.send(new GetCommand({ TableName: TABLE, Key: { PK: `CHORE#${id}`, SK: "META" } }));
+  if (!res.Item) throw new ApiError(404, "Chore log not found");
+  const existing = res.Item as ChoreLog;
+  if (existing.completedBy !== caller.sub && !caller.isAdmin) {
+    throw new ApiError(403, "Only the person who logged it or an admin can delete an entry");
+  }
+  await ddb.send(new DeleteCommand({ TableName: TABLE, Key: { PK: `CHORE#${id}`, SK: "META" } }));
 }
