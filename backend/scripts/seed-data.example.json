@@ -78,5 +78,35 @@
       "category": "food",
       "description": "Breakfast and lunch"
     }
+  ],
+  "albums": [
+    {
+      "slug": "yard",
+      "title": "Yard & grounds"
+    },
+    {
+      "slug": "fridge",
+      "title": "Fridge"
+    },
+    {
+      "slug": "pantry",
+      "title": "Pantry & dry goods"
+    },
+    {
+      "slug": "firewood",
+      "title": "Firewood"
+    },
+    {
+      "slug": "water-shutoff",
+      "title": "Water shutoff & well"
+    },
+    {
+      "slug": "electrical-panel",
+      "title": "Electrical panel"
+    },
+    {
+      "slug": "roof-gutters",
+      "title": "Roof & gutters"
+    }
   ]
 }
