@@ -1,0 +1,65 @@
+# Semver releases for this repo, matching aws-deployment-tooling and
+# aws-reusable-workflows: conventional commits on main -> release-please opens a
+# release PR -> merging it tags vX.Y.Z, cuts a GitHub Release, and updates
+# CHANGELOG.md.
+#
+# Deployment profiles (e.g. kyleswiger/jackscabin-mgmt) pin this repo as a
+# submodule at a release tag rather than at an arbitrary commit, so "what is
+# deployed" is a version number instead of a SHA.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          release-type: simple
+
+  # The sharp/libvips+libheif Lambda layer takes ~45 minutes and Docker to
+  # build, so no deploy can build it inline. layer-build.yml already produces it
+  # on every change; attaching that zip to the release makes each release
+  # self-contained — a profile repo deploying tag vX.Y.Z fetches the exact layer
+  # that tag was tested with, with no cross-repo artifact token.
+  layer-asset:
+    needs: release
+    if: needs.release.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # release-please just pushed the tag; a shallow clone cannot see it
+
+      - name: Download the most recent successful layer build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_ID=$(gh run list -w sharp-heif-layer -b main --status success -L 1 \
+            --json databaseId -q '.[0].databaseId')
+          if [ -z "$RUN_ID" ]; then
+            echo "::error::No successful sharp-heif-layer run on main. Run that workflow, then re-run this job." >&2
+            exit 1
+          fi
+          echo "Using layer from run $RUN_ID"
+          gh run download "$RUN_ID" -n sharp-heif-layer -D dist
+          test -s dist/layer.zip
+
+      - name: Attach layer.zip to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ needs.release.outputs.tag_name }}" dist/layer.zip --clobber
