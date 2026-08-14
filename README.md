@@ -135,6 +135,29 @@ mv my-profile/terraform.tfstate my-profile/terraform.tfstate.pre-s3
 Locking uses a DynamoDB table for compatibility with Terraform < 1.10. On 1.10+ you can
 drop `dynamodb_table` from `backend.hcl`, add `use_lockfile = true`, and delete the table.
 
+### Deploying from CI instead of a laptop
+
+A profile repo can run `deploy.sh` from GitHub Actions with no stored AWS keys. Set
+these in the profile's `terraform.tfvars` and apply once by hand to create the role:
+
+```hcl
+cicd_repo         = "you/your-profile-repo"
+cicd_environment  = "prod"            # must match the workflow's `environment:`
+cicd_state_bucket = "my-tfstate-bucket"
+cicd_lock_table   = "terraform-locks"
+```
+
+Then save `terraform output cicd_role_arn` as the profile repo's `AWS_DEPLOY_ROLE_ARN`
+variable. From then on, merges to the profile's `main` deploy through the environment's
+approval gate.
+
+Two things to know. The role trusts the OIDC subject
+`repo:<owner>/<repo>:environment:<cicd_environment>` — GitHub mints the environment
+form, not the branch ref, for any job that declares an `environment:`, so the names must
+match exactly or every deploy fails at assume-role. And `cicd_create_oidc_provider`
+defaults to `false`: flip it to `true` only if this is the first stack in the account to
+use GitHub OIDC.
+
 ### Custom domain
 
 The site works out of the box on the CloudFront URL (`terraform output site_url`). For a
@@ -217,6 +240,22 @@ write notification-log rows that nothing can delete, so `globalSetup` turns
 guard is why the test account needs `admin` — if the flag can't be set, the run aborts rather
 than proceed. The only lasting footprint is one marked yardwork log per run (type `other`, which
 doesn't affect the mow reminder clock), because chore logs have no delete endpoint.
+
+## Releases
+
+Conventional commits on `main` drive [release-please](.github/workflows/release.yml):
+merging the release PR tags `vX.Y.Z`, cuts a GitHub Release, and updates `CHANGELOG.md`.
+Each release carries the prebuilt `layer.zip` as an asset, so a deployment can fetch the
+exact sharp/libheif layer that version was tested with instead of spending 45 minutes
+rebuilding it.
+
+Profile repos should pin their `upstream/` submodule to a release tag rather than to a
+bare commit, so what's deployed is a version number:
+
+```bash
+git -C upstream fetch --tags && git -C upstream checkout v1.2.3
+git commit -am "chore(deps): bump cabin-management to v1.2.3"
+```
 
 ## Upgrading an existing deployment
 

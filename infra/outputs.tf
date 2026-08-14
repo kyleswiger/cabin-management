@@ -43,3 +43,9 @@ output "table_name" {
 output "region" {
   value = var.region
 }
+
+# ARN of the CI/CD deploy role, when cicd_repo is set. Save it as the profile
+# repo's AWS_DEPLOY_ROLE_ARN variable; the deploy workflow assumes it.
+output "cicd_role_arn" {
+  value = local.cicd_enabled ? module.cicd_role[0].role_arn : ""
+}

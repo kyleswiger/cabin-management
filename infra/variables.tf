@@ -51,6 +51,40 @@ variable "sms_number_type" {
   }
 }
 
+variable "cicd_repo" {
+  description = <<-EOT
+    Deployment profile repository in "owner/repo" form (e.g. "kyleswiger/jackscabin-mgmt").
+    Set it to create a keyless GitHub Actions role that can deploy this stack, so
+    releases ship from CI instead of from a workstation. Empty means manual deploys.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "cicd_environment" {
+  description = "GitHub Environment the deploy job runs in. The role trusts this name in the OIDC subject claim, so it must match the workflow's `environment:` exactly."
+  type        = string
+  default     = "prod"
+}
+
+variable "cicd_create_oidc_provider" {
+  description = "Create the account's GitHub OIDC provider. Leave false when another stack in the same account already manages it — a second provider for the same URL is an API error."
+  type        = bool
+  default     = false
+}
+
+variable "cicd_state_bucket" {
+  description = "S3 bucket holding this deployment's Terraform state (from the profile's backend.hcl). Grants CI access to it. Empty for local state."
+  type        = string
+  default     = ""
+}
+
+variable "cicd_lock_table" {
+  description = "DynamoDB table used for Terraform state locking. Empty to skip."
+  type        = string
+  default     = ""
+}
+
 variable "media_public_key_pem" {
   description = <<-EOT
     PEM-encoded 2048-bit RSA PUBLIC key for CloudFront signed cookies on /media/* (PRD 5.8).
