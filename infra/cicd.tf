@@ -98,7 +98,10 @@ locals {
         sid    = "ReadOnlyPlan"
         effect = "Allow"
         actions = [
+          # The github-oidc-role module looks the provider up by URL, which the
+          # AWS provider implements as List then Get; both are required.
           "iam:GetOpenIDConnectProvider",
+          "iam:ListOpenIDConnectProviders",
           "iam:ListRoles",
           "sts:GetCallerIdentity",
         ]
