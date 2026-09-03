@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/kyleswiger/cabin-management/compare/v1.1.0...v1.1.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* **cicd:** grant iam:ListOpenIDConnectProviders to the deploy role ([#16](https://github.com/kyleswiger/cabin-management/issues/16)) ([11a389f](https://github.com/kyleswiger/cabin-management/commit/11a389f08ee88537e681d37a675a9a1a899cc8dc))
+
 ## [1.1.0](https://github.com/kyleswiger/cabin-management/compare/v1.0.0...v1.1.0) (2026-08-18)
 
 
